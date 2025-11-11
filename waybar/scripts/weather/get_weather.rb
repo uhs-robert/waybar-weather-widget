@@ -61,39 +61,64 @@ ASTRO3D_HEADER_TEXT = format(
   date: 'Date', rise: 'Rise', set: 'Set'
 )
 
-# WMO Weather code descriptions
-WMO_CODE_DESCRIPTIONS = {
-  0 => 'Clear sky',
-  1 => 'Mainly clear',
-  2 => 'Partly cloudy',
-  3 => 'Overcast',
-  45 => 'Fog',
-  48 => 'Depositing rime fog',
-  51 => 'Light drizzle',
-  53 => 'Moderate drizzle',
-  55 => 'Dense drizzle',
-  56 => 'Light freezing drizzle',
-  57 => 'Dense freezing drizzle',
-  61 => 'Slight rain',
-  63 => 'Moderate rain',
-  65 => 'Heavy rain',
-  66 => 'Light freezing rain',
-  67 => 'Heavy freezing rain',
-  71 => 'Slight snow fall',
-  73 => 'Moderate snow fall',
-  75 => 'Heavy snow fall',
-  77 => 'Snow grains',
-  80 => 'Slight rain showers',
-  81 => 'Moderate rain showers',
-  82 => 'Violent rain showers',
-  85 => 'Slight snow showers',
-  86 => 'Heavy snow showers',
-  95 => 'Thunderstorm',
-  96 => 'Thunderstorm with slight hail',
-  99 => 'Thunderstorm with heavy hail'
-}.freeze
-
 # ─── Modules ────────────────────────────────────────────────────────────────
+
+# A module for general-purpose helper functions
+#
+module Utils
+  class << self
+    # Loads a JSON or JSONC file and parses it.
+    def load_json(path)
+      file_content = File.read(path, encoding: 'utf-8')
+      # Basic JSONC support: remove single-line comments
+      content_no_comments = file_content.gsub(%r{//.*$}, '')
+      JSON.parse(content_no_comments)
+    end
+
+    # Parses a value into an integer, with a fallback default.
+    def parse_int(val, default = 0)
+      return default if val.nil? || val == ''
+      return val.to_i if val.is_a?(Numeric)
+      return val.to_i if val.to_s.match?(/\A-?\d+\z/)
+      return val.to_f.to_i if val.to_s.match?(/\A-?\d+\.?\d*\z/)
+
+      default
+    end
+
+    # Parses a value into a float, with a fallback default.
+    def parse_float(val, default = 0.0)
+      return default if val.nil? || val == ''
+      return val.to_f if val.is_a?(Numeric)
+      return val.to_f if val.to_s.match?(/\A-?\d+\.?\d*\z/)
+
+      default
+    end
+
+    # Formats a Time/DateTime object into a 2-digit hour (e.g., "08", "23").
+    def fmt_hour(datetime)
+      datetime.strftime('%H')
+    end
+
+    # Formats a date string (e.g., "2025-11-20") into "Day MM/DD".
+    def fmt_day_of_week(datestr)
+      # e.g., 'Mon 10/06'
+      Time.strptime(datestr, '%Y-%m-%d').strftime('%a %m/%d')
+    end
+
+    # Normalizes a string by stripping whitespace and downcasing.
+    def norm(str)
+      str.to_s.strip.downcase
+    end
+
+    # Converts a value (nil, string, or array) into a Set of normalized strings.
+    def to_set(val)
+      return Set.new if val.nil?
+      return Set.new(val.map { |x| norm(x) }) if val.is_a?(Array)
+
+      Set[norm(val)]
+    end
+  end
+end
 
 # Main configuration, merges with user config for dynamic user settings based on json file
 module Config
@@ -116,6 +141,8 @@ module Config
     unit: 'Celsius', # 'Celsius' | 'Fahrenheit'
     hours_ahead: 24, # max 24
     forecast_days: 10, # max 16
+    latitude: 'auto', # or float
+    longitude: 'auto', # or float
     pongo_size: {}
   }
 
@@ -125,14 +152,18 @@ module Config
     'font_size' => :font_size,
     'unit' => :unit,
     'hours_ahead' => :hours_ahead,
-    'forecast_days' => :forecast_days
+    'forecast_days' => :forecast_days,
+    'latitude' => :latitude,
+    'longitude' => :longitude
   }.freeze
 
   def self.settings
     @settings
   end
 
-  def self.init(user_config)
+  def self.init
+    user_config = load_user_config
+
     # Merge colors settings
     @settings[:colors].merge!(user_config['colors']) if user_config.key?('colors') && user_config['colors'].is_a?(Hash)
 
@@ -173,6 +204,14 @@ module Config
       medium: current_size * 1000,
       large: (current_size + 4) * 1000
     }
+  end
+
+  private_class_method def self.load_user_config
+    cfg_path = File.join(__dir__, 'weather_settings.jsonc')
+    data = Utils.load_json(cfg_path)
+    raise 'weather_settings.jsonc must be a JSON object' unless data.is_a?(Hash)
+
+    data
   end
 
   update_pongo_sizes
@@ -270,6 +309,22 @@ module Temperature
   end
 end
 
+# Parses Precipitation (PoP) into glyphs and colors
+module Precipitation
+  def self.color(pop)
+    pop = [[0, pop.to_i].max, 100].min
+    return Config.colors['pop_low'] if pop < 30   # 0–29
+    return Config.colors['pop_med'] if pop < 60   # 30–59
+    return Config.colors['pop_high'] if pop < 80  # 60–79
+
+    Config.colors['pop_vhigh'] # 80–100
+  end
+
+  def self.icon(pop)
+    pop >= POP_ALERT_THRESHOLD ? ICON[:PRECIPITATION][:HIGH] : ICON[:PRECIPITATION][:LOW]
+  end
+end
+
 # Handles mode toggles to view different weather tooltips
 module WeatherMode
   MODES = %w[default weekview].freeze
@@ -306,74 +361,106 @@ module WeatherMode
   end
 end
 
-# ─── Utilities ──────────────────────────────────────────────────────────────
-def safe(hash, key, default = nil)
-  hash.key?(key) ? hash[key] : default
+# TODO: Consolodiate functions
+module ForecastData
+  # fetch_location_from_ip
+  # fetch_openmeteo_forecast
+  # extract_current
+  # build_next_hours
+  # build_next_days
+  # build_next_3days_detailed
+  # build_astro_by_date
+  # get_sun_times
 end
 
-def load_json(path)
-  file_content = File.read(path, encoding: 'utf-8')
-  # Basic JSONC support: remove single-line comments
-  content_no_comments = file_content.gsub(%r{//.*$}, '')
-  JSON.parse(content_no_comments)
+# TODO: Consolodiate functions
+module TooltipBuilder
+  # make_hour_table
+  # make_day_table
+  # make_3h_table
+  # make_astro3d_table
+  # build_header_block
+  # build_week_view_tooltip
+  # build_text_and_tooltip
+  # divider
 end
+
+# Handles Icons in terms of mapping via weather_code or styling icon
+module Icons
+  def self.init
+    @icon_map = load_icon_map(__dir__)
+  end
+
+  def self.weather_icon(code, is_day)
+    code = code.to_i
+
+    @icon_map.each do |item|
+      next unless item['code'].to_i == code
+
+      return is_day ? (item['icon'] || '') : (item['icon-night'] || '')
+    end
+
+    ''
+  end
+
+  def self.style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
+    "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
+  end
+
+  private_class_method def self.load_icon_map(script_path)
+    data = Utils.load_json(File.join(script_path, 'weather_icons.json'))
+    data.is_a?(Array) ? data : []
+  rescue StandardError
+    []
+  end
+end
+
+# Parses weather code descriptions
+module WeatherCode
+  def self.description(code)
+    WMO_CODE_DESCRIPTIONS[code.to_i] || 'Unknown'
+  end
+
+  WMO_CODE_DESCRIPTIONS = {
+    0 => 'Clear sky',
+    1 => 'Mainly clear',
+    2 => 'Partly cloudy',
+    3 => 'Overcast',
+    45 => 'Fog',
+    48 => 'Depositing rime fog',
+    51 => 'Light drizzle',
+    53 => 'Moderate drizzle',
+    55 => 'Dense drizzle',
+    56 => 'Light freezing drizzle',
+    57 => 'Dense freezing drizzle',
+    61 => 'Slight rain',
+    63 => 'Moderate rain',
+    65 => 'Heavy rain',
+    66 => 'Light freezing rain',
+    67 => 'Heavy freezing rain',
+    71 => 'Slight snow fall',
+    73 => 'Moderate snow fall',
+    75 => 'Heavy snow fall',
+    77 => 'Snow grains',
+    80 => 'Slight rain showers',
+    81 => 'Moderate rain showers',
+    82 => 'Violent rain showers',
+    85 => 'Slight snow showers',
+    86 => 'Heavy snow showers',
+    95 => 'Thunderstorm',
+    96 => 'Thunderstorm with slight hail',
+    99 => 'Thunderstorm with heavy hail'
+  }.freeze
+end
+
+# ─── Utilities ──────────────────────────────────────────────────────────────
 
 def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = Config.colors['divider'])
   line = char * [1, length].max
   "<span font_family='monospace' foreground='#{color}'>#{line}</span>"
 end
 
-def parse_int(val, default = 0)
-  return default if val.nil? || val == ''
-  return val.to_i if val.is_a?(Numeric)
-  return val.to_i if val.to_s.match?(/\A-?\d+\z/)
-  return val.to_f.to_i if val.to_s.match?(/\A-?\d+\.?\d*\z/)
-
-  default
-end
-
-def parse_float(val, default = 0.0)
-  return default if val.nil? || val == ''
-  return val.to_f if val.is_a?(Numeric)
-  return val.to_f if val.to_s.match?(/\A-?\d+\.?\d*\z/)
-
-  default
-end
-
-def fmt_hour(datetime)
-  datetime.strftime('%H')
-end
-
-def fmt_day_of_week(datestr)
-  # e.g., 'Mon 10/06'
-  Time.strptime(datestr, '%Y-%m-%d').strftime('%a %m/%d')
-end
-
-def pop_color(pop)
-  pop = [[0, pop.to_i].max, 100].min
-  return Config.colors['pop_low'] if pop < 30    # 0–29
-  return Config.colors['pop_med'] if pop < 60    # 30–59
-  return Config.colors['pop_high'] if pop < 80   # 60–79
-
-  Config.colors['pop_vhigh'] # 80–100
-end
-
-def icon_for_pop(pop)
-  pop >= POP_ALERT_THRESHOLD ? ICON[:PRECIPITATION][:HIGH] : ICON[:PRECIPITATION][:LOW]
-end
-
-def wmo_code_description(code)
-  WMO_CODE_DESCRIPTIONS[code.to_i] || 'Unknown'
-end
-
 # ─── Icons ──────────────────────────────────────────────────────────────────
-def load_icon_map(script_path)
-  data = load_json(File.join(script_path, 'weather_icons.json'))
-  data.is_a?(Array) ? data : []
-rescue StandardError
-  []
-end
-
 def norm(str)
   str.to_s.strip.downcase
 end
@@ -383,23 +470,6 @@ def to_set(val)
   return Set.new(val.map { |x| norm(x) }) if val.is_a?(Array)
 
   Set[norm(val)]
-end
-
-def map_condition_icon(icon_map, code, is_day)
-  code = code.to_i
-
-  # Find exact code match
-  icon_map.each do |item|
-    next unless item['code'].to_i == code
-
-    return is_day ? (item['icon'] || '') : (item['icon-night'] || '')
-  end
-
-  ''
-end
-
-def style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
-  "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
 end
 
 # ─── Data fetch / parse ─────────────────────────────────────────────────────
@@ -415,18 +485,10 @@ def fetch_location_from_ip
   raise 'Unexpected response from ip-api.com' unless data.is_a?(Hash)
 
   {
-    'lat' => parse_float(data['lat']),
-    'lon' => parse_float(data['lon']),
+    'lat' => Utils.parse_float(data['lat']),
+    'lon' => Utils.parse_float(data['lon']),
     'location_name' => "#{data['city']}, #{data['regionName']}, #{data['country']}"
   }
-end
-
-def load_config(script_path)
-  cfg_path = File.join(script_path, 'weather_settings.jsonc')
-  data = load_json(cfg_path)
-  raise 'weather_settings.jsonc must be a JSON object' unless data.is_a?(Hash)
-
-  data
 end
 
 def fetch_openmeteo_forecast(lat, lon, unit_c, forecast_days = 16)
@@ -464,12 +526,12 @@ def extract_current(blob, _unit, location_name = nil)
   {
     'timezone' => timezone,
     'location_name' => location_name,
-    'cond' => wmo_code_description(cur['weather_code']),
+    'cond' => WeatherCode.description(cur['weather_code']),
     'code' => cur['weather_code'].to_i,
-    'temp' => parse_float(cur['temperature_2m']),
-    'feels' => parse_float(cur['apparent_temperature']),
-    'precip_amt' => parse_float(cur['precipitation']),
-    'is_day' => parse_int(cur['is_day'], 1),
+    'temp' => Utils.parse_float(cur['temperature_2m']),
+    'feels' => Utils.parse_float(cur['apparent_temperature']),
+    'precip_amt' => Utils.parse_float(cur['precipitation']),
+    'is_day' => Utils.parse_int(cur['is_day'], 1),
     'now_local' => now_local
   }
 end
@@ -490,12 +552,12 @@ def build_next_hours(blob, now_local, limit)
 
     hours_list << {
       'dt' => dt,
-      'temp' => parse_float(temps[i]),
-      'pop' => parse_int(pops[i]),
-      'precip' => parse_float(precips[i]),
-      'cond' => wmo_code_description(codes[i]),
+      'temp' => Utils.parse_float(temps[i]),
+      'pop' => Utils.parse_int(pops[i]),
+      'precip' => Utils.parse_float(precips[i]),
+      'cond' => WeatherCode.description(codes[i]),
       'code' => codes[i].to_i,
-      'is_day' => parse_int(is_days[i], 1)
+      'is_day' => Utils.parse_int(is_days[i], 1)
     }
   end
 
@@ -520,12 +582,12 @@ def build_next_days(blob, max_days = 16)
   dates[0...max_days].each_with_index do |date_str, i|
     days << {
       'date' => date_str,
-      'max' => parse_float(max_temps[i]),
-      'min' => parse_float(min_temps[i]),
-      'cond' => wmo_code_description(codes[i]),
+      'max' => Utils.parse_float(max_temps[i]),
+      'min' => Utils.parse_float(min_temps[i]),
+      'cond' => WeatherCode.description(codes[i]),
       'code' => codes[i].to_i,
-      'precip' => parse_float(precips[i]),
-      'pop' => parse_int(pops[i]),
+      'precip' => Utils.parse_float(precips[i]),
+      'pop' => Utils.parse_int(pops[i]),
       'sunrise' => sunrises[i],
       'sunset' => sunsets[i]
     }
@@ -566,12 +628,12 @@ def build_next_3days_detailed(blob, now_local, num_days = 3)
     rows << {
       'date' => date_str,
       'dt' => dt,
-      'temp' => parse_float(temps[i]),
-      'pop' => parse_int(pops[i]),
-      'precip' => parse_float(precips[i]),
-      'cond' => wmo_code_description(codes[i]),
+      'temp' => Utils.parse_float(temps[i]),
+      'pop' => Utils.parse_int(pops[i]),
+      'precip' => Utils.parse_float(precips[i]),
+      'cond' => WeatherCode.description(codes[i]),
       'code' => codes[i].to_i,
-      'is_day' => parse_int(is_days[i], 1)
+      'is_day' => Utils.parse_int(is_days[i], 1)
     }
   end
 
@@ -610,7 +672,7 @@ def make_astro3d_table(rows, astro_by_date)
     sr, ss = astro_by_date.fetch(date, ['', ''])
     sr = (sr.empty? ? '—' : sr)[0, 5]
     ss = (ss.empty? ? '—' : ss)[0, 5]
-    format('%-9s │ %5s │ %5s', fmt_day_of_week(date), sr, ss)
+    format('%-9s │ %5s │ %5s', Utils.fmt_day_of_week(date), sr, ss)
   end
 
   return 'No sunrise/sunset data' if lines.empty?
@@ -619,7 +681,7 @@ def make_astro3d_table(rows, astro_by_date)
 end
 
 # ─── Tables & Tooltip ───────────────────────────────────────────────────────
-def make_hour_table(next_hours, unit, precip_unit, icon_map)
+def make_hour_table(next_hours, unit, precip_unit)
   header = "<span weight='bold'>#{HOUR_TABLE_HEADER_TEXT}</span>"
   rows = []
 
@@ -629,16 +691,16 @@ def make_hour_table(next_hours, unit, precip_unit, icon_map)
     temp_col = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
 
     pop_txt = "#{h['pop'].to_i}%".rjust(4)
-    pop_col = "<span foreground='#{pop_color(h['pop'])}'>#{pop_txt}</span>"
+    pop_col = "<span foreground='#{Precipitation.color(h['pop'])}'>#{pop_txt}</span>"
 
     precip_col = format('%<val>.1f %<unit>s', val: h['precip'], unit: precip_unit).rjust(7)
 
-    glyph = map_condition_icon(icon_map, h['code'], h['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+    glyph = Icons.weather_icon(h['code'], h['is_day'] != 0)
+    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
     cond_cell = "#{icon_html} #{CGI.escapeHTML(h['cond'].to_s)}".strip
 
     rows << format('%-4s │ %s │ %s │ %s │ %s',
-                   fmt_hour(h['dt']), temp_col, pop_col, precip_col, cond_cell)
+                   Utils.fmt_hour(h['dt']), temp_col, pop_col, precip_col, cond_cell)
   end
 
   return 'No hourly data' if rows.empty?
@@ -646,7 +708,7 @@ def make_hour_table(next_hours, unit, precip_unit, icon_map)
   "<span font_family='monospace'>#{header}\n#{rows.join("\n")}</span>"
 end
 
-def make_day_table(days, unit, precip_unit, icon_map)
+def make_day_table(days, unit, precip_unit)
   header = "<span weight='bold'>#{DAY_TABLE_HEADER_TEXT}</span>"
   out_rows = []
 
@@ -662,17 +724,17 @@ def make_day_table(days, unit, precip_unit, icon_map)
 
     pop = [[0, d['pop'].to_i].max, 100].min
     pop_txt = format('%3d%%', pop)
-    pop_col = "<span foreground='#{pop_color(pop)}'>#{pop_txt}</span>"
+    pop_col = "<span foreground='#{Precipitation.color(pop)}'>#{pop_txt}</span>"
 
     precip_col = format('%<val>.1f %<unit>s', val: d['precip'], unit: precip_unit).rjust(7)
 
     cond_txt = d['cond'].to_s
-    glyph = map_condition_icon(icon_map, d['code'], true)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+    glyph = Icons.weather_icon(d['code'], true)
+    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
     cond_cell = "#{icon_html} #{CGI.escapeHTML(cond_txt)}".strip
 
     row = format('%-9s │ %s │ %s │ %s │ %s │ %s',
-                 fmt_day_of_week(d['date']), hi_col, lo_col, pop_col, precip_col, cond_cell)
+                 Utils.fmt_day_of_week(d['date']), hi_col, lo_col, pop_col, precip_col, cond_cell)
     out_rows << row
   end
 
@@ -681,7 +743,7 @@ def make_day_table(days, unit, precip_unit, icon_map)
   "<span font_family='monospace'>#{header}\n#{out_rows.join("\n")}</span>"
 end
 
-def make_3h_table(rows, unit, precip_unit, icon_map)
+def make_3h_table(rows, unit, precip_unit)
   header = "<span weight='bold'>#{DETAIL3H_HEADER_TEXT}</span>"
   out = []
 
@@ -691,16 +753,16 @@ def make_3h_table(rows, unit, precip_unit, icon_map)
 
     pop_val = [[0, r['pop'].to_i].max, 100].min
     pop_txt = format('%3d%%', pop_val)
-    pop_col = "<span foreground='#{pop_color(pop_val)}'>#{pop_txt}</span>"
+    pop_col = "<span foreground='#{Precipitation.color(pop_val)}'>#{pop_txt}</span>"
 
     precip_col = format('%<val>.1f %<unit>s', val: r['precip'], unit: precip_unit).rjust(7)
 
-    glyph = map_condition_icon(icon_map, r['code'], r['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+    glyph = Icons.weather_icon(r['code'], r['is_day'] != 0)
+    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
     cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
 
     out << format('%-9s │ %2s │ %s │ %s │ %s │ %s',
-                  fmt_day_of_week(r['date']), fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
+                  Utils.fmt_day_of_week(r['date']), Utils.fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
   end
 
   return 'No 3-hour detail' if out.empty?
@@ -708,7 +770,7 @@ def make_3h_table(rows, unit, precip_unit, icon_map)
   "<span font_family='monospace'>#{header}\n#{out.join("\n")}</span>"
 end
 
-def build_header_block(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:, is_day:, fallback_icon:,
+def build_header_block(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
                        sunrise: nil, sunset: nil, now_pop: nil, precip_amt: nil, precip_unit: '', location_name: nil)
   # Returns the exact same top block used by all tooltips.
   display_location = location_name || timezone || 'Local'
@@ -717,9 +779,9 @@ def build_header_block(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:,
   # current conditions + colored thermometer
   tglyph, tcolor = Temperature.glyph_and_color(feels)
   current_line = format('%s %s | %s%d%s (feels %d%s)',
-                        style_icon(map_condition_icon(icon_map, code, is_day != 0) || fallback_icon),
+                        Icons.style_icon(Icons.weather_icon(code, is_day != 0) || fallback_icon),
                         CGI.escapeHTML(cond),
-                        style_icon(tglyph, tcolor),
+                        Icons.style_icon(tglyph, tcolor),
                         temp.round,
                         unit,
                         feels.round,
@@ -729,17 +791,17 @@ def build_header_block(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:,
   astro_line = ''
   if sunrise || sunset
     astro_line = format('%s Sunrise %s | %s Sunset %s',
-                        style_icon(ICON[:SUN][:RISE]),
+                        Icons.style_icon(ICON[:SUN][:RISE]),
                         CGI.escapeHTML(sunrise || '—'),
-                        style_icon(ICON[:SUN][:SET]),
+                        Icons.style_icon(ICON[:SUN][:SET]),
                         CGI.escapeHTML(sunset || '—'))
   end
 
   # optional "now" precip / PoP (colored)
   now_line = ''
   if now_pop && precip_amt && !precip_unit.empty?
-    pop_icon_html = style_icon(icon_for_pop(now_pop), pop_color(now_pop))
-    now_pop_col = "<span foreground='#{pop_color(now_pop)}'>#{now_pop.to_i}%</span>"
+    pop_icon_html = Icons.style_icon(Precipitation.icon(now_pop), Precipitation.color(now_pop))
+    now_pop_col = "<span foreground='#{Precipitation.color(now_pop)}'>#{now_pop.to_i}%</span>"
     now_line = format('%s PoP %s, Precip %.1f%s',
                       pop_icon_html, now_pop_col, precip_amt, precip_unit)
   end
@@ -751,56 +813,56 @@ def build_header_block(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:,
   parts.join("\n")
 end
 
-def build_week_view_tooltip(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:, is_day:, fallback_icon:,
+def build_week_view_tooltip(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
                             three_hour_rows:, precip_unit:, sunrise: nil, sunset: nil,
                             now_pop: nil, precip_amt: nil, astro_by_date: nil, location_name: nil)
   header_block = build_header_block(
     timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
-    icon_map: icon_map, code: code, is_day: is_day, fallback_icon: fallback_icon,
+    code: code, is_day: is_day, fallback_icon: fallback_icon,
     sunrise: sunrise, sunset: sunset, now_pop: now_pop,
     precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
   )
 
   astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
-  astro_header = "<b>#{style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
-                                  Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
+  astro_header = "<b>#{Icons.style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
+                                        Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
 
-  detail_header = "<b>#{style_icon('󰨳', Config.colors['primary'], Config.pongo_size[:small])} Week Details</b>"
-  detail_table = make_3h_table(three_hour_rows, unit, precip_unit, icon_map)
+  detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'], Config.pongo_size[:small])} Week Details</b>"
+  detail_table = make_3h_table(three_hour_rows, unit, precip_unit)
 
   "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
 end
 
 def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, is_day:, next_hours:,
-                           days:, unit:, precip_unit:, icon_map:, icon_pos:, fallback_icon:,
+                           days:, unit:, precip_unit:, icon_pos:, fallback_icon:,
                            sunrise:, sunset:, location_name: nil, forecast_days: 16)
   # icon for current condition
-  cond_icon_raw = map_condition_icon(icon_map, code, is_day != 0) || fallback_icon
+  cond_icon_raw = Icons.weather_icon(code, is_day != 0) || fallback_icon
 
   # main text with waybar icon
-  waybar_icon = style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
+  waybar_icon = Icons.style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
   left = "#{waybar_icon}#{temp.round}#{unit}"
   right = "#{temp.round}#{unit} #{waybar_icon}"
   text = (icon_pos || 'left') == 'left' ? left : right
 
   # tables
-  next_hours_table = make_hour_table(next_hours, unit, precip_unit, icon_map)
-  next_days_overview_table = make_day_table(days, unit, precip_unit, icon_map)
+  next_hours_table = make_hour_table(next_hours, unit, precip_unit)
+  next_days_overview_table = make_day_table(days, unit, precip_unit)
 
   header_block = build_header_block(
     timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
-    icon_map: icon_map, code: code, is_day: is_day, fallback_icon: fallback_icon,
+    code: code, is_day: is_day, fallback_icon: fallback_icon,
     sunrise: sunrise, sunset: sunset,
     now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
     precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
   )
 
   tooltip = "#{header_block}\n" \
-            "<b>#{style_icon('', Config.colors['primary'],
-                             Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
+            "<b>#{Icons.style_icon('', Config.colors['primary'],
+                                   Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
             "#{next_hours_table}\n\n#{divider}\n\n" \
-            "<b>#{style_icon('󰨳', Config.colors['primary'],
-                             Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
+            "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+                                   Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
   [text, tooltip]
 end
 
@@ -821,18 +883,17 @@ def main
     end
   end
 
-  script_path = __dir__
-
   begin
-    cfg = load_config(script_path)
+    Config.init
     mode = WeatherMode.get
-    Config.init(cfg)
 
     # Parse config
     unit_c = Config.settings[:unit] == 'Celsius'
     hours_ahead = (Config.settings[:hours_ahead] || 24).to_i
     forecast_days = (Config.settings[:forecast_days] || 16).to_i
     icon_pos = (Config.settings[:icon_position] || 'left').to_s
+    lat_cfg = Config.settings[:latitude].to_s.strip.downcase
+    lon_cfg = Config.settings[:longitude].to_s.strip.downcase
     unit = unit_c ? '°C' : '°F'
     precip_unit = unit_c ? 'mm' : 'in'
 
@@ -844,10 +905,7 @@ def main
     )
 
     # Detect location
-    lat_cfg = cfg['latitude'].to_s.strip.downcase
-    lon_cfg = cfg['longitude'].to_s.strip.downcase
     location_name = nil
-
     if lat_cfg == 'auto' || lon_cfg == 'auto'
       # Fetch location from IP
       geo_data = fetch_location_from_ip
@@ -856,8 +914,8 @@ def main
       location_name = geo_data['location_name']
     else
       # Use hardcoded coordinates
-      lat = parse_float(cfg['latitude'])
-      lon = parse_float(cfg['longitude'])
+      lat = Utils.parse_float(cfg['latitude'])
+      lon = Utils.parse_float(cfg['longitude'])
     end
 
     # data
@@ -870,14 +928,14 @@ def main
     astro_by_date = build_astro_by_date(days)
 
     # icons
-    icon_map = load_icon_map(script_path)
-    fallback_icon = map_condition_icon(icon_map, cur['code'], cur['is_day'] != 0) || ''
+    Icons.init
+    fallback_icon = Icons.weather_icon(cur['code'], cur['is_day'] != 0) || ''
 
     # Default tooltip (compact)
     text_default, tooltip_default = build_text_and_tooltip(
       timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
       precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
-      days: days, unit: unit, precip_unit: precip_unit, icon_map: icon_map,
+      days: days, unit: unit, precip_unit: precip_unit,
       icon_pos: icon_pos, fallback_icon: fallback_icon, sunrise: sunrise, sunset: sunset,
       location_name: cur['location_name'], forecast_days: forecast_days
     )
@@ -885,7 +943,7 @@ def main
     # Detail tooltip (3-hour view)
     tooltip_week_view = build_week_view_tooltip(
       timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
-      unit: unit, icon_map: icon_map, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
+      unit: unit, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
       three_hour_rows: next_3days_detailed, precip_unit: precip_unit,
       sunrise: sunrise, sunset: sunset,
       now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
