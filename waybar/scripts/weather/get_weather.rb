@@ -93,7 +93,9 @@ WMO_CODE_DESCRIPTIONS = {
   99 => 'Thunderstorm with heavy hail'
 }.freeze
 
-# ─── Classes ────────────────────────────────────────────────────────────────
+# ─── Modules ────────────────────────────────────────────────────────────────
+
+# Main configuration, merges with user config for dynamic user settings based on json file
 module Config
   @settings = {
     colors: {
@@ -130,7 +132,7 @@ module Config
     @settings
   end
 
-  def self.merge_user_config(user_config)
+  def self.init(user_config)
     # Merge colors settings
     @settings[:colors].merge!(user_config['colors']) if user_config.key?('colors') && user_config['colors'].is_a?(Hash)
 
@@ -172,7 +174,100 @@ module Config
       large: (current_size + 4) * 1000
     }
   end
+
   update_pongo_sizes
+end
+
+# Parses temperature into glyphs and colors
+module Temperature
+  SUMMER_MONTHS = (5..9).freeze
+  SHOULDER_MONTHS = [3, 4, 10].freeze
+  DEFAULT_COLD_C = 5
+  DEFAULT_COLD_F = 41
+  COLD_BAND    = [ICON[:THERMOMETER][:COLD], Config.colors['cold']].freeze
+  NEUTRAL_BAND = [ICON[:THERMOMETER][:NEUTRAL], Config.colors['neutral']].freeze
+  WARM_BAND    = [ICON[:THERMOMETER][:WARM], Config.colors['warm']].freeze
+  HOT_BAND     = [ICON[:THERMOMETER][:HOT], Config.colors['hot']].freeze
+
+  def self.init(unit:, bias:, month: Time.now.month)
+    @unit = unit
+    @seasonal_bias_enabled = bias
+    @current_month = month
+    @temperature_bands = build_temperature_bands
+  end
+
+  def self.glyph_and_color(temp)
+    found_band = @temperature_bands.find do |limit, _glyph, _color|
+      temp < limit
+    end
+    return nil if found_band.nil?
+
+    [found_band[1], found_band[2]]
+  end
+
+  def self.color(temp)
+    glyph_and_color = glyph_and_color(temp)
+    return unless glyph_and_color
+
+    glyph_and_color.last
+  end
+
+  def self.glyph(temp)
+    glyph_and_color = glyph_and_color(temp)
+    return unless glyph_and_color
+
+    glyph_and_color.first
+  end
+
+  # --- Private Helpers ---
+  private_class_method def self.build_temperature_bands
+    cold, neutral, warm = temperature_limits
+
+    [
+      [cold, *COLD_BAND],
+      [neutral, *NEUTRAL_BAND],
+      [warm,    *WARM_BAND],
+      [Float::INFINITY, *HOT_BAND]
+    ]
+  end
+
+  private_class_method def self.temperature_limits
+    cold_limit = calculate_cold_limit
+
+    if celsius?
+      [cold_limit, 20, 28]
+    else
+      [cold_limit, 68, 82]
+    end
+  end
+
+  private_class_method def self.calculate_cold_limit
+    unless @seasonal_bias_enabled
+      return celsius? ? DEFAULT_COLD_C : DEFAULT_COLD_F
+    end
+
+    if celsius?
+      calculate_seasonal_celsius_cold_limit
+    else
+      calculate_seasonal_fahrenheit_cold_limit
+    end
+  end
+
+  private_class_method def self.calculate_seasonal_celsius_cold_limit
+    return 10 if SUMMER_MONTHS.cover?(@current_month)
+    return 8 if SHOULDER_MONTHS.include?(@current_month)
+
+    DEFAULT_COLD_C
+  end
+
+  private_class_method def self.calculate_seasonal_fahrenheit_cold_limit
+    celsius_limit = calculate_seasonal_celsius_cold_limit
+    ((celsius_limit * 9.0 / 5.0) + 32).round
+  end
+
+  private_class_method def self.celsius?
+    @unit.to_s.strip.start_with?('°C')
+  end
 end
 
 # ─── Utilities ──────────────────────────────────────────────────────────────
@@ -216,51 +311,6 @@ end
 def fmt_day_of_week(datestr)
   # e.g., 'Mon 10/06'
   Time.strptime(datestr, '%Y-%m-%d').strftime('%a %m/%d')
-end
-
-def seasonal_cold_limit_c(month = Time.now.month)
-  return 10 if (5..9).cover?(month)
-  return 8 if [3, 4, 10].include?(month)
-
-  5
-end
-
-def seasonal_cold_limit_f(month = Time.now.month)
-  ((seasonal_cold_limit_c(month) * 9.0 / 5.0) + 32).round
-end
-
-def thermo_bands(unit)
-  if celsius_unit?(unit)
-    cold = SEASONAL_BIAS ? seasonal_cold_limit_c : 5
-    [
-      [cold, ICON[:THERMOMETER][:COLD],    Config.colors['cold']],
-      [20,  ICON[:THERMOMETER][:NEUTRAL],  Config.colors['neutral']],
-      [28,  ICON[:THERMOMETER][:WARM],     Config.colors['warm']],
-      [Float::INFINITY, ICON[:THERMOMETER][:HOT], Config.colors['hot']]
-    ]
-  else
-    cold = SEASONAL_BIAS ? seasonal_cold_limit_f : 41
-    [
-      [cold, ICON[:THERMOMETER][:COLD],    Config.colors['cold']],
-      [68,  ICON[:THERMOMETER][:NEUTRAL],  Config.colors['neutral']],
-      [82,  ICON[:THERMOMETER][:WARM],     Config.colors['warm']],
-      [Float::INFINITY, ICON[:THERMOMETER][:HOT], Config.colors['hot']]
-    ]
-  end
-end
-
-def celsius_unit?(unit)
-  unit.to_s.strip.start_with?('°C')
-end
-
-def thermometer_for_temp(temp, unit)
-  bands = thermo_bands(unit)
-  _, glyph, color = bands.find { |limit, _, _| temp < limit }
-  [glyph, color]
-end
-
-def color_for_temp(val, unit)
-  thermometer_for_temp(val, unit)[1]
 end
 
 def pop_color(pop)
@@ -565,7 +615,8 @@ def make_hour_table(next_hours, unit, precip_unit, icon_map)
 
   next_hours.each do |h|
     temp_txt = "#{h['temp'].round}#{unit}".rjust(5)
-    temp_col = "<span foreground='#{color_for_temp(h['temp'], unit)}'>#{temp_txt}</span>"
+    # temp_col = "<span foreground='#{color_for_temp(h['temp'], unit)}'>#{temp_txt}</span>"
+    temp_col = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
 
     pop_txt = "#{h['pop'].to_i}%".rjust(4)
     pop_col = "<span foreground='#{pop_color(h['pop'])}'>#{pop_txt}</span>"
@@ -596,8 +647,8 @@ def make_day_table(days, unit, precip_unit, icon_map)
     hi_txt = format('%3d%s', hi_val, unit)
     lo_txt = format('%3d%s', lo_val, unit)
 
-    hi_col = "<span foreground='#{color_for_temp(d['max'], unit)}'>#{hi_txt}</span>"
-    lo_col = "<span foreground='#{color_for_temp(d['min'], unit)}'>#{lo_txt}</span>"
+    hi_col = "<span foreground='#{Temperature.color(d['max'])}'>#{hi_txt}</span>"
+    lo_col = "<span foreground='#{Temperature.color(d['min'])}'>#{lo_txt}</span>"
 
     pop = [[0, d['pop'].to_i].max, 100].min
     pop_txt = format('%3d%%', pop)
@@ -626,7 +677,7 @@ def make_3h_table(rows, unit, precip_unit, icon_map)
 
   rows.each do |r|
     temp_txt = "#{r['temp'].round}#{unit}".rjust(5)
-    temp_col = "<span foreground='#{color_for_temp(r['temp'], unit)}'>#{temp_txt}</span>"
+    temp_col = "<span foreground='#{Temperature.color(r['temp'])}'>#{temp_txt}</span>"
 
     pop_val = [[0, r['pop'].to_i].max, 100].min
     pop_txt = format('%3d%%', pop_val)
@@ -654,7 +705,7 @@ def build_header_block(timezone:, cond:, temp:, feels:, unit:, icon_map:, code:,
   location_line = format('<b>%s</b>', CGI.escapeHTML(display_location))
 
   # current conditions + colored thermometer
-  tglyph, tcolor = thermometer_for_temp(feels, unit)
+  tglyph, tcolor = Temperature.glyph_and_color(feels)
   current_line = format('%s %s | %s%d%s (feels %d%s)',
                         style_icon(map_condition_icon(icon_map, code, is_day != 0) || fallback_icon),
                         CGI.escapeHTML(cond),
@@ -765,9 +816,7 @@ def main
   begin
     cfg = load_config(script_path)
     mode = get_mode
-
-    # merge_user_config Config with loaded config
-    Config.merge_user_config(cfg)
+    Config.init(cfg)
 
     # Parse config
     unit_c = Config.settings[:unit] == 'Celsius'
@@ -776,6 +825,13 @@ def main
     icon_pos = (Config.settings[:icon_position] || 'left').to_s
     unit = unit_c ? '°C' : '°F'
     precip_unit = unit_c ? 'mm' : 'in'
+
+    # Init Temperature
+    Temperature.init(
+      unit: unit,
+      bias: SEASONAL_BIAS,
+      month: Time.now.month
+    )
 
     # Detect location
     lat_cfg = cfg['latitude'].to_s.strip.downcase
