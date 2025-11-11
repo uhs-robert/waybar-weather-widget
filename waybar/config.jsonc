@@ -1,0 +1,4 @@
+// [EXAMPLE CONFIG]
+{
+  "modules-center": ["custom/weather"]
+}
