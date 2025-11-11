@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# waybar/.config/waybar/scripts/weather-api/get_weather.rb
+# waybar/scripts/weather/get_weather.rb
 # frozen_string_literal: true
 
 # Waybar weather (Open-Meteo.com)
@@ -770,3 +770,4 @@ def main
 end
 
 main if __FILE__ == $PROGRAM_NAME
+
