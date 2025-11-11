@@ -797,7 +797,7 @@ end
 # ─── Main runner ────────────────────────────────────────────────────────────
 def main
   # quick mode ops (no network)
-  if ARGV.length > 0
+  unless ARGV.empty?
     arg = ARGV[0]
     if %w[--next --toggle].include?(arg)
       cycle_mode('next')
