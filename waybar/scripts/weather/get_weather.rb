@@ -903,8 +903,10 @@ def main
   rescue Net::HTTPError, SocketError, Timeout::Error => e
     sleep 2
     puts JSON.generate(text: '…', tooltip: "network error: #{e.message}")
-  rescue JSON::ParserError, KeyError, StandardError => e
+  rescue JSON::ParserError, KeyError => e
     puts JSON.generate(text: '', tooltip: "parse error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+  rescue StandardError => e
+    puts JSON.generate(text: '!', tooltip: "unexpected error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
   end
 end
 
