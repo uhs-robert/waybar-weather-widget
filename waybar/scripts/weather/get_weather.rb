@@ -7,18 +7,6 @@
 # - Tooltip: current details + next N hours table + up to 16-day table
 # - Uses weather_icons.json mapping for WMO condition glyphs
 # - Emits Waybar JSON (set return-type=json, markup=true)
-#
-# Config file (same dir): weather_settings.jsonc
-# {
-#   "latitude": "auto",                 // or specific latitude (e.g., 40.71)
-#   "longitude": "auto",                // or specific longitude (e.g., -74.01)
-#   "unit": "Fahrenheit",               // or "Celsius"
-#   "icon-position": "left",            // or "right"
-#   "hours_ahead": 24,                  // # of hourly rows to show
-#   "forecast_days": 16                 // # of days to fetch (max 16)
-# }
-#
-# Note: Set latitude/longitude to "auto" to detect location via IP geolocation
 
 require 'json'
 require 'set'
@@ -29,7 +17,6 @@ require 'cgi'
 require 'fileutils'
 
 # ─── Constants ──────────────────────────────────────────────────────────────
-COLOR_PRIMARY = '#42A5F5'
 ICON_SIZE = '14000' # pango units; ~14pt
 ICON_SIZE_LG = '18000'
 ICON_SIZE_SM = '12000'
@@ -46,16 +33,18 @@ THERMO_NEUTRAL = ''
 THERMO_WARM    = ''
 THERMO_HOT     = ''
 
-COLOR_COLD = 'skyblue'
-COLOR_NEUTRAL = COLOR_PRIMARY
-COLOR_WARM = 'khaki'
-COLOR_HOT = 'indianred'
-
-COLOR_POP_LOW = '#EAD7FF'
-COLOR_POP_MED = '#CFA7FF'
-COLOR_POP_HIGH = '#BC85FF'
-COLOR_POP_VHIGH = '#A855F7'
-COLOR_DIVIDER = '#2B3B57'
+THEME = {
+  'primary' => '#42A5F5',
+  'cold' => 'skyblue',
+  'neutral' => '#42A5F5',
+  'warm' => 'khaki',
+  'hot' => 'indianred',
+  'pop_low' => '#EAD7FF',
+  'pop_med' => '#CFA7FF',
+  'pop_high' => '#BC85FF',
+  'pop_vhigh' => '#A855F7',
+  'divider' => '#2B3B57'
+}
 
 DIVIDER_CHAR = '─'
 DIVIDER_LEN = 74
@@ -109,7 +98,7 @@ def load_json(path)
   JSON.parse(content_no_comments)
 end
 
-def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = COLOR_DIVIDER)
+def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = THEME['divider'])
   line = char * [1, length].max
   "<span font_family='monospace' foreground='#{color}'>#{line}</span>"
 end
@@ -155,18 +144,18 @@ def thermo_bands(unit)
   if celsius_unit?(unit)
     cold = SEASONAL_BIAS ? seasonal_cold_limit_c : 5
     [
-      [cold, THERMO_COLD,    COLOR_COLD],
-      [20,  THERMO_NEUTRAL,  COLOR_NEUTRAL],
-      [28,  THERMO_WARM,     COLOR_WARM],
-      [Float::INFINITY, THERMO_HOT, COLOR_HOT]
+      [cold, THERMO_COLD,    THEME['cold']],
+      [20,  THERMO_NEUTRAL,  THEME['neutral']],
+      [28,  THERMO_WARM,     THEME['warm']],
+      [Float::INFINITY, THERMO_HOT, THEME['hot']]
     ]
   else
     cold = SEASONAL_BIAS ? seasonal_cold_limit_f : 41
     [
-      [cold, THERMO_COLD,    COLOR_COLD],
-      [68,  THERMO_NEUTRAL,  COLOR_NEUTRAL],
-      [82,  THERMO_WARM,     COLOR_WARM],
-      [Float::INFINITY, THERMO_HOT, COLOR_HOT]
+      [cold, THERMO_COLD,    THEME['cold']],
+      [68,  THERMO_NEUTRAL,  THEME['neutral']],
+      [82,  THERMO_WARM,     THEME['warm']],
+      [Float::INFINITY, THERMO_HOT, THEME['hot']]
     ]
   end
 end
@@ -187,11 +176,11 @@ end
 
 def pop_color(pop)
   pop = [[0, pop.to_i].max, 100].min
-  return COLOR_POP_LOW if pop < 30    # 0–29
-  return COLOR_POP_MED if pop < 60    # 30–59
-  return COLOR_POP_HIGH if pop < 80   # 60–79
+  return THEME['pop_low'] if pop < 30    # 0–29
+  return THEME['pop_med'] if pop < 60    # 30–59
+  return THEME['pop_high'] if pop < 80   # 60–79
 
-  COLOR_POP_VHIGH # 80–100
+  THEME['pop_vhigh'] # 80–100
 end
 
 def icon_for_pop(pop)
@@ -260,7 +249,7 @@ def map_condition_icon(icon_map, code, is_day)
   ''
 end
 
-def style_icon(glyph, color = COLOR_PRIMARY, size = ICON_SIZE)
+def style_icon(glyph, color = THEME['primary'], size = ICON_SIZE)
   "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
 end
 
@@ -495,7 +484,7 @@ def make_hour_table(next_hours, unit, precip_unit, icon_map)
     precip_col = format('%<val>.1f %<unit>s', val: h['precip'], unit: precip_unit).rjust(7)
 
     glyph = map_condition_icon(icon_map, h['code'], h['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, COLOR_PRIMARY, ICON_SIZE_SM)
+    icon_html = glyph.empty? ? '' : style_icon(glyph, THEME['primary'], ICON_SIZE_SM)
     cond_cell = "#{icon_html} #{CGI.escapeHTML(h['cond'].to_s)}".strip
 
     rows << format('%-4s │ %s │ %s │ %s │ %s',
@@ -529,7 +518,7 @@ def make_day_table(days, unit, precip_unit, icon_map)
 
     cond_txt = d['cond'].to_s
     glyph = map_condition_icon(icon_map, d['code'], true)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, COLOR_PRIMARY, ICON_SIZE_SM)
+    icon_html = glyph.empty? ? '' : style_icon(glyph, THEME['primary'], ICON_SIZE_SM)
     cond_cell = "#{icon_html} #{CGI.escapeHTML(cond_txt)}".strip
 
     row = format('%-9s │ %s │ %s │ %s │ %s │ %s',
@@ -557,7 +546,7 @@ def make_3h_table(rows, unit, precip_unit, icon_map)
     precip_col = format('%<val>.1f %<unit>s', val: r['precip'], unit: precip_unit).rjust(7)
 
     glyph = map_condition_icon(icon_map, r['code'], r['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : style_icon(glyph, COLOR_PRIMARY, ICON_SIZE_SM)
+    icon_html = glyph.empty? ? '' : style_icon(glyph, THEME['primary'], ICON_SIZE_SM)
     cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
 
     out << format('%-9s │ %2s │ %s │ %s │ %s │ %s',
@@ -623,9 +612,9 @@ def build_week_view_tooltip(timezone:, cond:, temp:, feels:, unit:, icon_map:, c
   )
 
   astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
-  astro_header = "<b>#{style_icon(SUNRISE_ICON, COLOR_PRIMARY, ICON_SIZE_SM)} Week Sunrise / Sunset</b>"
+  astro_header = "<b>#{style_icon(SUNRISE_ICON, THEME['primary'], ICON_SIZE_SM)} Week Sunrise / Sunset</b>"
 
-  detail_header = "<b>#{style_icon('󰨳', COLOR_PRIMARY, ICON_SIZE_SM)} Week Details</b>"
+  detail_header = "<b>#{style_icon('󰨳', THEME['primary'], ICON_SIZE_SM)} Week Details</b>"
   detail_table = make_3h_table(three_hour_rows, unit, precip_unit, icon_map)
 
   "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
@@ -638,7 +627,7 @@ def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, 
   cond_icon_raw = map_condition_icon(icon_map, code, is_day != 0) || fallback_icon
 
   # main text with waybar icon
-  waybar_icon = style_icon(cond_icon_raw, COLOR_PRIMARY, ICON_SIZE_SM)
+  waybar_icon = style_icon(cond_icon_raw, THEME['primary'], ICON_SIZE_SM)
   left = "#{waybar_icon}#{temp.round}#{unit}"
   right = "#{temp.round}#{unit} #{waybar_icon}"
   text = (icon_pos || 'left') == 'left' ? left : right
@@ -656,9 +645,9 @@ def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, 
   )
 
   tooltip = "#{header_block}\n" \
-            "<b>#{style_icon('', COLOR_PRIMARY, ICON_SIZE_SM)} Next #{next_hours.length} hours</b>\n\n" \
+            "<b>#{style_icon('', THEME['primary'], ICON_SIZE_SM)} Next #{next_hours.length} hours</b>\n\n" \
             "#{next_hours_table}\n\n#{divider}\n\n" \
-            "<b>#{style_icon('󰨳', COLOR_PRIMARY,
+            "<b>#{style_icon('󰨳', THEME['primary'],
                              ICON_SIZE_SM)} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
   [text, tooltip]
 end
@@ -685,6 +674,15 @@ def main
   begin
     cfg = load_config(script_path)
     mode = get_mode
+
+    # Load theme settings
+    theme_cfg = safe(cfg, 'theme', {})
+
+
+
+    # Load theme settings
+    theme_cfg = safe(cfg, 'theme', {})
+    THEME.merge!(theme_cfg) # Update global THEME with config values
 
     # Parse config
     unit_c = safe(cfg, 'unit', 'Celsius') == 'Celsius'
