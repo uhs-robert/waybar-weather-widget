@@ -41,10 +41,25 @@ ICON = {
   }
 }.freeze
 
-HOUR_TABLE_HEADER_TEXT = format('%-4s │ %5s │ %4s │ %7s │ Cond', 'Hr', 'Temp', 'PoP', 'Precip')
-DAY_TABLE_HEADER_TEXT = format('%-9s │ %5s │ %5s │ %4s │ %7s │ Cond', 'Day', 'Hi', 'Lo', 'PoP', 'Precip')
-DETAIL3H_HEADER_TEXT = format('%-9s │ %2s │ %5s │ %4s │ %7s │ Cond', 'Date', 'Hr', 'Temp', 'PoP', 'Precip')
-ASTRO3D_HEADER_TEXT = format('%-9s │ %5s │ %5s', 'Date', 'Rise', 'Set')
+# Table headers
+HOUR_TABLE_HEADER_TEXT = format(
+  '%<hr>-4s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
+  hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
+)
+DAY_TABLE_HEADER_TEXT = format(
+  '%-<day>9s │ %<hi>5s │ %<lo>5s │ %<pop>4s │ %<precip>7s │ Cond',
+  day: 'Day', hi: 'Hi', lo: 'Lo', pop: 'PoP', precip: 'Precip'
+)
+
+DETAIL3H_HEADER_TEXT = format(
+  '%-<date>9s │ %<hr>2s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
+  date: 'Date', hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
+)
+
+ASTRO3D_HEADER_TEXT = format(
+  '%-<date>9s │ %<rise>5s │ %<set>5s',
+  date: 'Date', rise: 'Rise', set: 'Set'
+)
 
 # WMO Weather code descriptions
 WMO_CODE_DESCRIPTIONS = {
