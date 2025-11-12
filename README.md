@@ -14,9 +14,12 @@
 
 <p align="center">
 A <strong>detailed and customizable</strong> weather widget for Waybar, powered by the Open-Meteo API.
+
+
+
 </p>
 
-![Waybar Weather Widget Screenshot](https://i.imgur.com/example.png) <!-- TODO: Replace with an actual screenshot -->
+https://github.com/user-attachments/assets/32f5bb93-c096-41f1-a141-40ccaba9a1cc
 
 ## ✨ Features
 
