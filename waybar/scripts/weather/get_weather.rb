@@ -85,7 +85,7 @@ module Config
       'pop_vhigh' => '#A855F7',
       'divider' => '#2B3B57'
     },
-    icon_type: 'nerd_font', # 'nerd_font' | 'emoji'
+    icon_type: 'nerd', # 'nerd' | 'emoji'
     icon_position: 'left', # 'left' | 'right'
     font_size: 14, # in px
     unit: 'Celsius', # 'Celsius' | 'Fahrenheit'
