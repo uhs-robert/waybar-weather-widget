@@ -16,51 +16,6 @@ require 'time'
 require 'cgi'
 require 'fileutils'
 
-# ─── Constants ──────────────────────────────────────────────────────────────
-SEASONAL_BIAS = ENV.fetch('SEASONAL_BIAS', '1') == '1'
-POP_ALERT_THRESHOLD = 60
-DIVIDER_CHAR = '─'
-DIVIDER_LEN = 74
-
-ICON = {
-  THERMOMETER: {
-    COLD: '',
-    NEUTRAL: '',
-    WARM: '',
-    HOT: ''
-  },
-
-  SUN: {
-    RISE: '',
-    SET: '󰖚'
-  },
-
-  PRECIPITATION: {
-    LOW: '',
-    HIGH: ''
-  }
-}.freeze
-
-# Table headers
-HOUR_TABLE_HEADER_TEXT = format(
-  '%<hr>-4s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
-  hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
-)
-DAY_TABLE_HEADER_TEXT = format(
-  '%-<day>9s │ %<hi>5s │ %<lo>5s │ %<pop>4s │ %<precip>7s │ Cond',
-  day: 'Day', hi: 'Hi', lo: 'Lo', pop: 'PoP', precip: 'Precip'
-)
-
-DETAIL3H_HEADER_TEXT = format(
-  '%-<date>9s │ %<hr>2s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
-  date: 'Date', hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
-)
-
-ASTRO3D_HEADER_TEXT = format(
-  '%-<date>9s │ %<rise>5s │ %<set>5s',
-  date: 'Date', rise: 'Rise', set: 'Set'
-)
-
 # ─── Modules ────────────────────────────────────────────────────────────────
 
 # A module for general-purpose helper functions
@@ -219,14 +174,23 @@ end
 
 # Parses temperature into glyphs and colors
 module Temperature
+  SEASONAL_BIAS = ENV.fetch('SEASONAL_BIAS', '1') == '1'
+
+  THERMOMETER_ICON = {
+    COLD: '',
+    NEUTRAL: '',
+    WARM: '',
+    HOT: ''
+  }.freeze
+
   SUMMER_MONTHS = (5..9).freeze
   SHOULDER_MONTHS = [3, 4, 10].freeze
   DEFAULT_COLD_C = 5
   DEFAULT_COLD_F = 41
-  COLD_BAND    = [ICON[:THERMOMETER][:COLD], Config.colors['cold']].freeze
-  NEUTRAL_BAND = [ICON[:THERMOMETER][:NEUTRAL], Config.colors['neutral']].freeze
-  WARM_BAND    = [ICON[:THERMOMETER][:WARM], Config.colors['warm']].freeze
-  HOT_BAND     = [ICON[:THERMOMETER][:HOT], Config.colors['hot']].freeze
+  COLD_BAND    = [THERMOMETER_ICON[:COLD], Config.colors['cold']].freeze
+  NEUTRAL_BAND = [THERMOMETER_ICON[:NEUTRAL], Config.colors['neutral']].freeze
+  WARM_BAND    = [THERMOMETER_ICON[:WARM], Config.colors['warm']].freeze
+  HOT_BAND     = [THERMOMETER_ICON[:HOT], Config.colors['hot']].freeze
 
   class << self
     def init(unit:, bias:, month: Time.now.month)
@@ -315,6 +279,13 @@ end
 
 # Parses Precipitation (PoP) into glyphs and colors
 module Precipitation
+  POP_ALERT_THRESHOLD = 60
+
+  PRECIPITATION_ICON = {
+    LOW: '',
+    HIGH: ''
+  }.freeze
+
   class << self
     def color(pop)
       pop = [[0, pop.to_i].max, 100].min
@@ -326,7 +297,7 @@ module Precipitation
     end
 
     def icon(pop)
-      pop >= POP_ALERT_THRESHOLD ? ICON[:PRECIPITATION][:HIGH] : ICON[:PRECIPITATION][:LOW]
+      pop >= POP_ALERT_THRESHOLD ? PRECIPITATION_ICON[:HIGH] : PRECIPITATION_ICON[:LOW]
     end
   end
 end
@@ -630,6 +601,34 @@ end
 
 # Handles building tooltips and tables for weather display
 module TooltipBuilder
+  DIVIDER_CHAR = '─'
+  DIVIDER_LEN = 74
+
+  SUN_ICON = {
+    RISE: '',
+    SET: '󰖚'
+  }.freeze
+
+  # Table headers
+  HOUR_TABLE_HEADER_TEXT = format(
+    '%<hr>-4s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
+    hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
+  )
+  DAY_TABLE_HEADER_TEXT = format(
+    '%-<day>9s │ %<hi>5s │ %<lo>5s │ %<pop>4s │ %<precip>7s │ Cond',
+    day: 'Day', hi: 'Hi', lo: 'Lo', pop: 'PoP', precip: 'Precip'
+  )
+
+  DETAIL3H_HEADER_TEXT = format(
+    '%-<date>9s │ %<hr>2s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
+    date: 'Date', hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
+  )
+
+  ASTRO3D_HEADER_TEXT = format(
+    '%-<date>9s │ %<rise>5s │ %<set>5s',
+    date: 'Date', rise: 'Rise', set: 'Set'
+  )
+
   class << self
     # --- NEW: This method's ONLY job is to build the waybar text ---
     def build_text(cond:, temp:, code:, is_day:, icon_pos:, fallback_icon:, unit:)
@@ -810,9 +809,9 @@ module TooltipBuilder
       astro_line = ''
       if sunrise || sunset
         astro_line = format('%s Sunrise %s | %s Sunset %s',
-                            Icons.style_icon(ICON[:SUN][:RISE]),
+                            Icons.style_icon(SUN_ICON[:RISE]),
                             CGI.escapeHTML(sunrise || '—'),
-                            Icons.style_icon(ICON[:SUN][:SET]),
+                            Icons.style_icon(SUN_ICON[:SET]),
                             CGI.escapeHTML(sunset || '—'))
       end
 
@@ -844,7 +843,7 @@ module TooltipBuilder
       )
 
       astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
-      astro_header = "<b>#{Icons.style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
+      astro_header = "<b>#{Icons.style_icon(SUN_ICON[:RISE], Config.colors['primary'],
                                             Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
 
       detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
@@ -1053,7 +1052,7 @@ private def initialize_app_config(settings)
 
   Temperature.init(
     unit: unit,
-    bias: SEASONAL_BIAS,
+    bias: Temperature::SEASONAL_BIAS,
     month: Time.now.month
   )
 
