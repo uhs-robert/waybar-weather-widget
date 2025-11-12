@@ -16,9 +16,9 @@
     "warm": "khaki",                      // Temp warm
     "hot": "indianred",                   // Temp hot
     "pop_low": "#EAD7FF",                 // Precipitation low
-    "pop_med": "#CFA7FF",                 // Precipitation low
-    "pop_high": "#BC85FF",                // Precipitation low
-    "pop_vhigh": "#A855F7",               // Precipitation low
+    "pop_med": "#CFA7FF",                 // Precipitation medium
+    "pop_high": "#BC85FF",                // Precipitation high
+    "pop_vhigh": "#A855F7",               // Precipitation very high
     "divider": "#2B3B57"                  // Dividers
   }
 }
