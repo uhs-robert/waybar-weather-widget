@@ -1,6 +1,7 @@
 {
   "latitude": "auto",         // e.g., 40.71 or "auto" to detect from IP address
   "longitude": "auto",        // e.g., -74.01 or "auto" to detect from IP address
+  "refresh_interval": 900,    // Seconds between API calls (900 = 15 min). View toggles use cache.
   "unit": "Fahrenheit",       // "Fahrenheit" or "Celsius"
   "icon_position": "left",    // "left" or "right".
   "hours_ahead": 24,          // Number of hours to show in hourly tooltip

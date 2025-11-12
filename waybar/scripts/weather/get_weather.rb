@@ -30,7 +30,6 @@ module Utils
     # @raise [JSON::ParserError] If file contains invalid JSON
     def load_json(path)
       file_content = File.read(path, encoding: 'utf-8')
-      # Basic JSONC support: remove single-line comments
       content_no_comments = file_content.gsub(%r{//.*$}, '')
       JSON.parse(content_no_comments)
     end
@@ -94,6 +93,7 @@ module Config
     forecast_days: 10, # max 16
     latitude: 'auto', # or float
     longitude: 'auto', # or float
+    refresh_interval: 900, # seconds between API calls
     pongo_size: {}
   }
 
@@ -105,7 +105,8 @@ module Config
     'hours_ahead' => :hours_ahead,
     'forecast_days' => :forecast_days,
     'latitude' => :latitude,
-    'longitude' => :longitude
+    'longitude' => :longitude,
+    'refresh_interval' => :refresh_interval
   }.freeze
 
   class << self
@@ -352,6 +353,88 @@ module WeatherMode
       dir = File.join(state_home, 'waybar')
       FileUtils.mkdir_p(dir)
       File.join(dir, 'weather_mode')
+    end
+  end
+end
+
+# Manages weather data caching to reduce API calls
+module CacheManager
+  class << self
+    # Checks if cached data is still fresh based on refresh interval
+    #
+    # @param refresh_interval [Integer] Seconds before cache expires
+    # @return [Boolean] True if cache exists and is fresh
+    def fresh?(refresh_interval = 900)
+      return false unless File.exist?(cache_file_path)
+
+      cache = load_cache
+      return false unless cache && cache['timestamp']
+
+      age = Time.now.to_i - cache['timestamp'].to_i
+      age < refresh_interval
+    rescue StandardError
+      false
+    end
+
+    # Loads cached weather data
+    #
+    # @return [Hash, nil] Cached data or nil if not available/invalid
+    def load_cache
+      return nil unless File.exist?(cache_file_path)
+
+      content = File.read(cache_file_path, encoding: 'utf-8')
+      JSON.parse(content)
+    rescue StandardError
+      nil
+    end
+
+    # Saves weather data to cache
+    #
+    # @param location [Hash] Location data with :lat, :lon, :location_name
+    # @param weather_data [Hash] Weather data hash
+    # @param units [Hash] Unit configuration hash
+    # @param settings [Hash] Settings hash
+    # @return [void]
+    def save_cache(location:, weather_data:, units:, settings:)
+      cache_data = {
+        'timestamp' => Time.now.to_i,
+        'settings' => {
+          'latitude' => settings[:latitude],
+          'longitude' => settings[:longitude],
+          'unit' => settings[:unit]
+        },
+        'location' => location,
+        'weather_data' => weather_data,
+        'units' => units
+      }
+
+      File.write(cache_file_path, JSON.generate(cache_data), encoding: 'utf-8')
+    rescue StandardError => e
+      # Silently fail - caching is not critical
+      warn "Cache write failed: #{e.message}" if ENV['DEBUG']
+    end
+
+    # Validates that cached settings match current settings
+    #
+    # @param settings [Hash] Current settings
+    # @return [Boolean] True if settings match
+    def settings_match?(settings)
+      cache = load_cache
+      return false unless cache && cache['settings']
+
+      cached_settings = cache['settings']
+      settings[:latitude].to_s == cached_settings['latitude'].to_s &&
+        settings[:longitude].to_s == cached_settings['longitude'].to_s &&
+        settings[:unit].to_s == cached_settings['unit'].to_s
+    end
+
+    private
+
+    def cache_file_path
+      state_home = ENV['XDG_STATE_HOME'] || File.expand_path('~/.local/state')
+      dir = File.join(state_home, 'waybar')
+      FileUtils.mkdir_p(dir)
+      File.join(dir, 'weather_cache.json')
     end
   end
 end
@@ -1077,16 +1160,76 @@ private def generate_output(mode, weather_data, settings, unit, precip_unit)
   ViewBuilder.build(mode, weather_data, settings, unit, precip_unit)
 end
 
+# Recursively converts hash string keys to symbols, handling nested structures
+private def symbolize_keys(obj)
+  case obj
+  when Hash
+    obj.transform_keys(&:to_sym).transform_values { |v| symbolize_keys(v) }
+  when Array
+    obj.map { |item| symbolize_keys(item) }
+  else
+    obj
+  end
+end
+
+# Converts cached weather data structure to use symbol keys
+# Note: Only symbolize top-level keys; keep nested structures with string keys
+# as the existing code expects string keys for accessing nested data
+private def symbolize_weather_data(data)
+  return data unless data.is_a?(Hash)
+
+  result = data.transform_keys(&:to_sym)
+
+  # Restore Time objects that were serialized as strings
+  if result[:cur] && result[:cur]['now_local'].is_a?(String)
+    result[:cur]['now_local'] = Time.parse(result[:cur]['now_local'])
+  end
+
+  # Restore Time objects in hourly forecast
+  if result[:next_hours].is_a?(Array)
+    result[:next_hours].each do |hour|
+      hour['dt'] = Time.parse(hour['dt']) if hour['dt'].is_a?(String)
+    end
+  end
+
+  result
+end
+
 # Main application logic orchestrator
-private def run_weather_update
+private def run_weather_update(force_refresh: false)
   settings = Config.settings
   mode = WeatherMode.get
   units = initialize_app_config(settings)
-  location = ForecastData.resolve_location(settings)
-  weather_data = fetch_weather_data(
-    location[:lat], location[:lon], settings,
-    units[:unit_c], location[:location_name], units[:unit]
-  )
+
+  # Check cache freshness and settings match
+  refresh_interval = settings[:refresh_interval] || 900
+  use_cache = !force_refresh &&
+              CacheManager.fresh?(refresh_interval) &&
+              CacheManager.settings_match?(settings)
+
+  if use_cache
+    # Load from cache
+    cache = CacheManager.load_cache
+    location = symbolize_keys(cache['location'])
+    weather_data = symbolize_weather_data(cache['weather_data'])
+    # Update units from cache to ensure consistency
+    units = symbolize_keys(cache['units'])
+  else
+    # Fetch fresh data from API
+    location = ForecastData.resolve_location(settings)
+    weather_data = fetch_weather_data(
+      location[:lat], location[:lon], settings,
+      units[:unit_c], location[:location_name], units[:unit]
+    )
+    # Save to cache
+    CacheManager.save_cache(
+      location: location,
+      weather_data: weather_data,
+      units: units,
+      settings: settings
+    )
+  end
+
   text, tooltip = generate_output(mode, weather_data, settings, units[:unit], units[:precip_unit])
   classes = [
     'weather',
