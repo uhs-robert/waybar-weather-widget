@@ -153,61 +153,65 @@ module Config
     'longitude' => :longitude
   }.freeze
 
-  def self.settings
-    @settings
-  end
+  class << self
+    attr_reader :settings
 
-  def self.init
-    user_config = load_user_config
+    def init
+      user_config = load_user_config
 
-    # Merge colors settings
-    @settings[:colors].merge!(user_config['colors']) if user_config.key?('colors') && user_config['colors'].is_a?(Hash)
+      # Merge colors settings
+      if user_config.key?('colors') && user_config['colors'].is_a?(Hash)
+        @settings[:colors].merge!(user_config['colors'])
+      end
 
-    # Handle font size calculations
-    self.set_font_size = user_config['font_size'] if user_config.key?('font_size')
+      # Handle font size calculations
+      self.set_font_size = user_config['font_size'] if user_config.key?('font_size')
 
-    # Merge other settings
-    SETTING_KEY_MAP.each do |config_key, settings_key|
-      @settings[settings_key] = user_config[config_key] if user_config.key?(config_key)
+      # Merge other settings
+      SETTING_KEY_MAP.each do |config_key, settings_key|
+        @settings[settings_key] = user_config[config_key] if user_config.key?(config_key)
+      end
     end
-  end
 
-  def self.colors
-    @settings[:colors]
-  end
+    def colors
+      @settings[:colors]
+    end
 
-  def self.pongo_size
-    @settings[:pongo_size]
-  end
+    def pongo_size
+      @settings[:pongo_size]
+    end
 
-  def self.icon_set
-    @settings[:icon_type]
-  end
+    def icon_set
+      @settings[:icon_type]
+    end
 
-  def self.set_color(key, value)
-    @settings[:colors][key] = value
-  end
+    def set_color(key, value)
+      @settings[:colors][key] = value
+    end
 
-  def self.set_font_size=(value)
-    @settings[:font_size] = value
-    update_pongo_sizes
-  end
+    def set_font_size=(value)
+      @settings[:font_size] = value
+      update_pongo_sizes
+    end
 
-  private_class_method def self.update_pongo_sizes
-    current_size = @settings[:font_size]
-    @settings[:pongo_size] = {
-      small: (current_size - 2) * 1000,
-      medium: current_size * 1000,
-      large: (current_size + 4) * 1000
-    }
-  end
+    private
 
-  private_class_method def self.load_user_config
-    cfg_path = File.join(__dir__, 'weather_settings.jsonc')
-    data = Utils.load_json(cfg_path)
-    raise 'weather_settings.jsonc must be a JSON object' unless data.is_a?(Hash)
+    def update_pongo_sizes
+      current_size = @settings[:font_size]
+      @settings[:pongo_size] = {
+        small: (current_size - 2) * 1000,
+        medium: current_size * 1000,
+        large: (current_size + 4) * 1000
+      }
+    end
 
-    data
+    def load_user_config
+      cfg_path = File.join(__dir__, 'weather_settings.jsonc')
+      data = Utils.load_json(cfg_path)
+      raise 'weather_settings.jsonc must be a JSON object' unless data.is_a?(Hash)
+
+      data
+    end
   end
 
   update_pongo_sizes
@@ -224,100 +228,106 @@ module Temperature
   WARM_BAND    = [ICON[:THERMOMETER][:WARM], Config.colors['warm']].freeze
   HOT_BAND     = [ICON[:THERMOMETER][:HOT], Config.colors['hot']].freeze
 
-  def self.init(unit:, bias:, month: Time.now.month)
-    @unit = unit
-    @seasonal_bias_enabled = bias
-    @current_month = month
-    @temperature_bands = build_temperature_bands
-  end
-
-  def self.glyph_and_color(temp)
-    found_band = @temperature_bands.find do |limit, _glyph, _color|
-      temp < limit
-    end
-    return nil if found_band.nil?
-
-    [found_band[1], found_band[2]]
-  end
-
-  def self.color(temp)
-    glyph_and_color = glyph_and_color(temp)
-    return unless glyph_and_color
-
-    glyph_and_color.last
-  end
-
-  def self.glyph(temp)
-    glyph_and_color = glyph_and_color(temp)
-    return unless glyph_and_color
-
-    glyph_and_color.first
-  end
-
-  # --- Private Helpers ---
-  private_class_method def self.build_temperature_bands
-    cold, neutral, warm = temperature_limits
-
-    [
-      [cold, *COLD_BAND],
-      [neutral, *NEUTRAL_BAND],
-      [warm,    *WARM_BAND],
-      [Float::INFINITY, *HOT_BAND]
-    ]
-  end
-
-  private_class_method def self.temperature_limits
-    cold_limit = calculate_cold_limit
-
-    if celsius?
-      [cold_limit, 20, 28]
-    else
-      [cold_limit, 68, 82]
-    end
-  end
-
-  private_class_method def self.calculate_cold_limit
-    unless @seasonal_bias_enabled
-      return celsius? ? DEFAULT_COLD_C : DEFAULT_COLD_F
+  class << self
+    def init(unit:, bias:, month: Time.now.month)
+      @unit = unit
+      @seasonal_bias_enabled = bias
+      @current_month = month
+      @temperature_bands = build_temperature_bands
     end
 
-    if celsius?
-      calculate_seasonal_celsius_cold_limit
-    else
-      calculate_seasonal_fahrenheit_cold_limit
+    def glyph_and_color(temp)
+      found_band = @temperature_bands.find do |limit, _glyph, _color|
+        temp < limit
+      end
+      return nil if found_band.nil?
+
+      [found_band[1], found_band[2]]
     end
-  end
 
-  private_class_method def self.calculate_seasonal_celsius_cold_limit
-    return 10 if SUMMER_MONTHS.cover?(@current_month)
-    return 8 if SHOULDER_MONTHS.include?(@current_month)
+    def color(temp)
+      glyph_and_color = glyph_and_color(temp)
+      return unless glyph_and_color
 
-    DEFAULT_COLD_C
-  end
+      glyph_and_color.last
+    end
 
-  private_class_method def self.calculate_seasonal_fahrenheit_cold_limit
-    celsius_limit = calculate_seasonal_celsius_cold_limit
-    ((celsius_limit * 9.0 / 5.0) + 32).round
-  end
+    def glyph(temp)
+      glyph_and_color = glyph_and_color(temp)
+      return unless glyph_and_color
 
-  private_class_method def self.celsius?
-    @unit.to_s.strip.start_with?('°C')
+      glyph_and_color.first
+    end
+
+    # --- Private Helpers ---
+    private
+
+    def build_temperature_bands
+      cold, neutral, warm = temperature_limits
+
+      [
+        [cold, *COLD_BAND],
+        [neutral, *NEUTRAL_BAND],
+        [warm,    *WARM_BAND],
+        [Float::INFINITY, *HOT_BAND]
+      ]
+    end
+
+    def temperature_limits
+      cold_limit = calculate_cold_limit
+
+      if celsius?
+        [cold_limit, 20, 28]
+      else
+        [cold_limit, 68, 82]
+      end
+    end
+
+    def calculate_cold_limit
+      unless @seasonal_bias_enabled
+        return celsius? ? DEFAULT_COLD_C : DEFAULT_COLD_F
+      end
+
+      if celsius?
+        calculate_seasonal_celsius_cold_limit
+      else
+        calculate_seasonal_fahrenheit_cold_limit
+      end
+    end
+
+    def calculate_seasonal_celsius_cold_limit
+      return 10 if SUMMER_MONTHS.cover?(@current_month)
+      return 8 if SHOULDER_MONTHS.include?(@current_month)
+
+      DEFAULT_COLD_C
+    end
+
+    def calculate_seasonal_fahrenheit_cold_limit
+      celsius_limit = calculate_seasonal_celsius_cold_limit
+      ((celsius_limit * 9.0 / 5.0) + 32).round
+    end
+
+    def celsius?
+      @unit.to_s.strip.start_with?('°C')
+    end
   end
 end
 
 # Parses Precipitation (PoP) into glyphs and colors
 module Precipitation
-  def self.color(pop)
-    pop = [[0, pop.to_i].max, 100].min
-    return Config.colors['pop_low'] if pop < 30   # 0–29
-    return Config.colors['pop_med'] if pop < 60   # 30–59
-    return Config.colors['pop_high'] if pop < 80  # 60–79
+  class << self
+    def color(pop)
+      pop = [[0, pop.to_i].max, 100].min
+      return Config.colors['pop_low'] if pop < 30   # 0–29
+      return Config.colors['pop_med'] if pop < 60   # 30–59
+      return Config.colors['pop_high'] if pop < 80  # 60–79
 
-    Config.colors['pop_vhigh'] # 80–100
-  end
+      Config.colors['pop_vhigh'] # 80–Infinity
+    end
 
-  def self.icon(pop)
-    pop >= POP_ALERT_THRESHOLD ? ICON[:PRECIPITATION][:HIGH] : ICON[:PRECIPITATION][:LOW]
+    def icon(pop)
+      pop >= POP_ALERT_THRESHOLD ? ICON[:PRECIPITATION][:HIGH] : ICON[:PRECIPITATION][:LOW]
+    end
   end
 end
 
@@ -329,45 +339,49 @@ module WeatherMode
   MODES = [DEFAULT, WEEKVIEW].freeze
   DEFAULT_MODE = DEFAULT
 
-  # Gets the current display mode.
-  #
-  # @return [String] Current mode (DEFAULT or WEEKVIEW)
-  def self.get
-    mode = File.read(file_path, encoding: 'utf-8').strip
-    MODES.include?(mode) ? mode : DEFAULT_MODE
-  rescue Errno::ENOENT
-    DEFAULT_MODE
-  end
+  class << self
+    # Gets the current display mode.
+    #
+    # @return [String] Current mode (DEFAULT or WEEKVIEW)
+    def get
+      mode = File.read(file_path, encoding: 'utf-8').strip
+      MODES.include?(mode) ? mode : DEFAULT_MODE
+    rescue Errno::ENOENT
+      DEFAULT_MODE
+    end
 
-  # Sets the display mode.
-  #
-  # @param mode [String] Mode to set (must be in MODES)
-  # @return [void]
-  def self.set(mode)
-    return unless MODES.include?(mode)
+    # Sets the display mode.
+    #
+    # @param mode [String] Mode to set (must be in MODES)
+    # @return [void]
+    def set(mode)
+      return unless MODES.include?(mode)
 
-    File.write(file_path, mode, encoding: 'utf-8')
-  end
+      File.write(file_path, mode, encoding: 'utf-8')
+    end
 
-  # Cycles to the next or previous mode.
-  #
-  # @param direction [String] 'next' or 'prev'
-  # @return [void]
-  def self.cycle(direction = 'next')
-    current_index = MODES.index(get) || 0
-    new_index = if direction == 'prev'
-                  (current_index - 1) % MODES.length
-                else
-                  (current_index + 1) % MODES.length
-                end
-    set(MODES[new_index])
-  end
+    # Cycles to the next or previous mode.
+    #
+    # @param direction [String] 'next' or 'prev'
+    # @return [void]
+    def cycle(direction = 'next')
+      current_index = MODES.index(get) || 0
+      new_index = if direction == 'prev'
+                    (current_index - 1) % MODES.length
+                  else
+                    (current_index + 1) % MODES.length
+                  end
+      set(MODES[new_index])
+    end
 
-  private_class_method def self.file_path
-    state_home = ENV['XDG_STATE_HOME'] || File.expand_path('~/.local/state')
-    dir = File.join(state_home, 'waybar')
-    FileUtils.mkdir_p(dir)
-    File.join(dir, 'weather_mode')
+    private
+
+    def file_path
+      state_home = ENV['XDG_STATE_HOME'] || File.expand_path('~/.local/state')
+      dir = File.join(state_home, 'waybar')
+      FileUtils.mkdir_p(dir)
+      File.join(dir, 'weather_mode')
+    end
   end
 end
 
@@ -844,124 +858,130 @@ end
 
 # Handles Icons in terms of mapping via weather_code or styling icon
 module Icons
-  def self.init
-    @icon_map = load_icon_map(__dir__)
-  end
-
-  def self.weather_icon(code, is_day)
-    code = code.to_i
-
-    @icon_map.each do |item|
-      next unless item['code'].to_i == code
-
-      return is_day ? (item['icon'] || '') : (item['icon-night'] || '')
+  class << self
+    def init
+      @icon_map = load_icon_map(__dir__)
     end
 
-    ''
-  end
+    def weather_icon(code, is_day)
+      code = code.to_i
 
-  def self.style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
-    "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
-  end
+      @icon_map.each do |item|
+        next unless item['code'].to_i == code
 
-  private_class_method def self.load_icon_map(script_path)
-    data = Utils.load_json(File.join(script_path, 'weather_icons.json'))
-    data.is_a?(Array) ? data : []
-  rescue StandardError
-    []
+        return is_day ? (item['icon'] || '') : (item['icon-night'] || '')
+      end
+
+      ''
+    end
+
+    def style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
+      "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
+    end
+
+    private
+
+    def load_icon_map(script_path)
+      data = Utils.load_json(File.join(script_path, 'weather_icons.json'))
+      data.is_a?(Array) ? data : []
+    rescue StandardError
+      []
+    end
   end
 end
 
 # View building strategies using the Strategy pattern.
 # Delegates to appropriate builder based on display mode.
 module ViewBuilder
-  # Builds view output by selecting the appropriate strategy.
-  #
-  # @param mode [String] Display mode (WeatherMode::DEFAULT or WeatherMode::WEEKVIEW)
-  # @param weather_data [Hash] Weather data including :cur, :days, :next_hours, etc.
-  # @param settings [Hash] Configuration settings
-  # @param unit [String] Temperature unit ('°C' or '°F')
-  # @param precip_unit [String] Precipitation unit ('mm' or 'in')
-  # @return [Array<String, String>] Text and tooltip strings for waybar display
-  def self.build(mode, weather_data, settings, unit, precip_unit)
-    builder = mode == WeatherMode::WEEKVIEW ? WeekViewBuilder : DefaultViewBuilder
-    builder.build(weather_data, settings, unit, precip_unit)
+  class << self
+    # Builds view output by selecting the appropriate strategy.
+    #
+    # @param mode [String] Display mode (WeatherMode::DEFAULT or WeatherMode::WEEKVIEW)
+    # @param weather_data [Hash] Weather data including :cur, :days, :next_hours, etc.
+    # @param settings [Hash] Configuration settings
+    # @param unit [String] Temperature unit ('°C' or '°F')
+    # @param precip_unit [String] Precipitation unit ('mm' or 'in')
+    # @return [Array<String, String>] Text and tooltip strings for waybar display
+    def build(mode, weather_data, settings, unit, precip_unit)
+      builder = mode == WeatherMode::WEEKVIEW ? WeekViewBuilder : DefaultViewBuilder
+      builder.build(weather_data, settings, unit, precip_unit)
+    end
   end
 end
 
 # Default view builder strategy - shows current conditions, hourly forecast, and daily overview.
 module DefaultViewBuilder
-  # Builds the default view with hourly and daily forecast tables.
-  #
-  # @param weather_data [Hash] Weather data hash
-  # @param settings [Hash] Configuration settings
-  # @param unit [String] Temperature unit
-  # @param precip_unit [String] Precipitation unit
-  # @return [Array<String, String>] Text and tooltip
-  def self.build(weather_data, settings, unit, precip_unit)
-    cur = weather_data[:cur]
-    days = weather_data[:days]
-    next_hours = weather_data[:next_hours]
-    sunrise = weather_data[:sunrise]
-    sunset = weather_data[:sunset]
-    fallback_icon = weather_data[:fallback_icon]
+  class << self
+    # Builds the default view with hourly and daily forecast tables.
+    #
+    # @param weather_data [Hash] Weather data hash
+    # @param settings [Hash] Configuration settings
+    # @param unit [String] Temperature unit
+    # @param precip_unit [String] Precipitation unit
+    # @return [Array<String, String>] Text and tooltip
+    def build(weather_data, settings, unit, precip_unit)
+      cur = weather_data[:cur]
+      days = weather_data[:days]
+      next_hours = weather_data[:next_hours]
+      sunrise = weather_data[:sunrise]
+      sunset = weather_data[:sunset]
+      fallback_icon = weather_data[:fallback_icon]
 
-    TooltipBuilder.build_text_and_tooltip(
-      timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
-      precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
-      days: days, unit: unit, precip_unit: precip_unit,
-      icon_pos: settings[:icon_position], fallback_icon: fallback_icon, sunrise: sunrise, sunset: sunset,
-      location_name: cur['location_name'], forecast_days: settings[:forecast_days]
-    )
+      TooltipBuilder.build_text_and_tooltip(
+        timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
+        precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
+        days: days, unit: unit, precip_unit: precip_unit,
+        icon_pos: settings[:icon_position], fallback_icon: fallback_icon, sunrise: sunrise, sunset: sunset,
+        location_name: cur['location_name'], forecast_days: settings[:forecast_days]
+      )
+    end
   end
 end
 
 # Week view builder strategy - shows detailed 3-hour interval forecast and sunrise/sunset times.
 module WeekViewBuilder
-  # Builds the week view with 3-hour intervals and astronomy data.
-  #
-  # @param weather_data [Hash] Weather data hash
-  # @param settings [Hash] Configuration settings
-  # @param unit [String] Temperature unit
-  # @param precip_unit [String] Precipitation unit
-  # @return [Array<String, String>] Text and tooltip
-  def self.build(weather_data, settings, unit, precip_unit)
-    cur = weather_data[:cur]
-    next_hours = weather_data[:next_hours]
-    sunrise = weather_data[:sunrise]
-    sunset = weather_data[:sunset]
-    fallback_icon = weather_data[:fallback_icon]
-    blob = weather_data[:blob]
-    days = weather_data[:days]
+  class << self
+    # Builds the week view with 3-hour intervals and astronomy data.
+    #
+    # @param weather_data [Hash] Weather data hash
+    # @param settings [Hash] Configuration settings
+    # @param unit [String] Temperature unit
+    # @param precip_unit [String] Precipitation unit
+    # @return [Array<String, String>] Text and tooltip
+    def build(weather_data, settings, unit, precip_unit)
+      cur = weather_data[:cur]
+      next_hours = weather_data[:next_hours]
+      sunrise = weather_data[:sunrise]
+      sunset = weather_data[:sunset]
+      fallback_icon = weather_data[:fallback_icon]
+      blob = weather_data[:blob]
+      days = weather_data[:days]
 
-    next_3days = ForecastData.build_next_3days_detailed(blob, cur['now_local'], 3)
-    astro_by_date = ForecastData.build_astro_by_date(days)
+      next_3days = ForecastData.build_next_3days_detailed(blob, cur['now_local'], 3)
+      astro_by_date = ForecastData.build_astro_by_date(days)
 
-    text = TooltipBuilder.build_text(
-      cond: cur['cond'], temp: cur['temp'], code: cur['code'], is_day: cur['is_day'],
-      icon_pos: settings[:icon_position], fallback_icon: fallback_icon, unit: unit
-    )
+      text = TooltipBuilder.build_text(
+        cond: cur['cond'], temp: cur['temp'], code: cur['code'], is_day: cur['is_day'],
+        icon_pos: settings[:icon_position], fallback_icon: fallback_icon, unit: unit
+      )
 
-    tooltip = TooltipBuilder.build_week_view_tooltip(
-      timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
-      unit: unit, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
-      three_hour_rows: next_3days, precip_unit: precip_unit,
-      sunrise: sunrise, sunset: sunset,
-      now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
-      precip_amt: cur['precip_amt'], astro_by_date: astro_by_date,
-      location_name: cur['location_name']
-    )
+      tooltip = TooltipBuilder.build_week_view_tooltip(
+        timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
+        unit: unit, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
+        three_hour_rows: next_3days, precip_unit: precip_unit,
+        sunrise: sunrise, sunset: sunset,
+        now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
+        precip_amt: cur['precip_amt'], astro_by_date: astro_by_date,
+        location_name: cur['location_name']
+      )
 
-    [text, tooltip]
+      [text, tooltip]
+    end
   end
 end
 
 # Parses weather code descriptions
 module WeatherCode
-  def self.description(code)
-    WMO_CODE_DESCRIPTIONS[code.to_i] || 'Unknown'
-  end
-
   WMO_CODE_DESCRIPTIONS = {
     0 => 'Clear sky',
     1 => 'Mainly clear',
@@ -992,6 +1012,12 @@ module WeatherCode
     96 => 'Thunderstorm with slight hail',
     99 => 'Thunderstorm with heavy hail'
   }.freeze
+
+  class << self
+    def description(code)
+      WMO_CODE_DESCRIPTIONS[code.to_i] || 'Unknown'
+    end
+  end
 end
 
 # ─── Main runner ────────────────────────────────────────────────────────────
