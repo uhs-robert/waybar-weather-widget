@@ -137,7 +137,7 @@ module Config
       @settings[:pongo_size]
     end
 
-    def icon_set
+    def icon_type
       @settings[:icon_type]
     end
 
@@ -173,25 +173,58 @@ module Config
   update_pongo_sizes
 end
 
+# Handles Icons in terms of mapping via weather_code or styling icon
+module Icons
+  class << self
+    def init(icon_type)
+      @icon_map = load_icon_map(__dir__)
+      all_ui_icons = Utils.load_json(File.join(__dir__, 'ui_icons.json'))
+      @ui_icons = all_ui_icons[icon_type] || all_ui_icons['nerd']
+    end
+
+    def get_ui(key)
+      keys = key.split('.')
+      keys.reduce(@ui_icons) { |acc, k| acc&.[](k) }
+    end
+
+    def weather_icon(code, is_day)
+      code = code.to_i
+      icon_type = Config.icon_type
+
+      @icon_map.each do |item|
+        next unless item['code'].to_i == code
+
+        icon_key = is_day ? "icon-#{icon_type}" : "icon-#{icon_type}-night"
+        fallback_key = is_day ? "icon-#{icon_type}" : "icon-#{icon_type}"
+
+        return item[icon_key] || item[fallback_key] || ''
+      end
+
+      ''
+    end
+
+    def style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
+      "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
+    end
+
+    private
+
+    def load_icon_map(script_path)
+      data = Utils.load_json(File.join(script_path, 'weather_icons.json'))
+      data.is_a?(Array) ? data : []
+    rescue StandardError
+      []
+    end
+  end
+end
+
 # Parses temperature into glyphs and colors
 module Temperature
   SEASONAL_BIAS = ENV.fetch('SEASONAL_BIAS', '1') == '1'
-
-  THERMOMETER_ICON = {
-    COLD: '',
-    NEUTRAL: '',
-    WARM: '',
-    HOT: ''
-  }.freeze
-
   SUMMER_MONTHS = (5..9).freeze
   SHOULDER_MONTHS = [3, 4, 10].freeze
   DEFAULT_COLD_C = 5
   DEFAULT_COLD_F = 41
-  COLD_BAND    = [THERMOMETER_ICON[:COLD], Config.colors['cold']].freeze
-  NEUTRAL_BAND = [THERMOMETER_ICON[:NEUTRAL], Config.colors['neutral']].freeze
-  WARM_BAND    = [THERMOMETER_ICON[:WARM], Config.colors['warm']].freeze
-  HOT_BAND     = [THERMOMETER_ICON[:HOT], Config.colors['hot']].freeze
 
   class << self
     def init(unit:, bias:, month: Time.now.month)
@@ -199,6 +232,31 @@ module Temperature
       @seasonal_bias_enabled = bias
       @current_month = month
       @temperature_bands = build_temperature_bands
+    end
+
+    def thermometer_icon
+      {
+        COLD: Icons.get_ui('thermometer.cold'),
+        NEUTRAL: Icons.get_ui('thermometer.neutral'),
+        WARM: Icons.get_ui('thermometer.warm'),
+        HOT: Icons.get_ui('thermometer.hot')
+      }
+    end
+
+    def cold_band
+      [thermometer_icon[:COLD], Config.colors['cold']]
+    end
+
+    def neutral_band
+      [thermometer_icon[:NEUTRAL], Config.colors['neutral']]
+    end
+
+    def warm_band
+      [thermometer_icon[:WARM], Config.colors['warm']]
+    end
+
+    def hot_band
+      [thermometer_icon[:HOT], Config.colors['hot']]
     end
 
     def glyph_and_color(temp)
@@ -231,10 +289,10 @@ module Temperature
       cold, neutral, warm = temperature_limits
 
       [
-        [cold, *COLD_BAND],
-        [neutral, *NEUTRAL_BAND],
-        [warm,    *WARM_BAND],
-        [Float::INFINITY, *HOT_BAND]
+        [cold, *Temperature.cold_band],
+        [neutral, *Temperature.neutral_band],
+        [warm,    *Temperature.warm_band],
+        [Float::INFINITY, *Temperature.hot_band]
       ]
     end
 
@@ -282,12 +340,14 @@ end
 module Precipitation
   POP_ALERT_THRESHOLD = 60
 
-  PRECIPITATION_ICON = {
-    LOW: '',
-    HIGH: ''
-  }.freeze
-
   class << self
+    def precipitation_icon
+      {
+        LOW: Icons.get_ui('precipitation.low'),
+        HIGH: Icons.get_ui('precipitation.high')
+      }
+    end
+
     def color(pop)
       pop = [[0, pop.to_i].max, 100].min
       return Config.colors['pop_low'] if pop < 30   # 0–29
@@ -298,7 +358,7 @@ module Precipitation
     end
 
     def icon(pop)
-      pop >= POP_ALERT_THRESHOLD ? PRECIPITATION_ICON[:HIGH] : PRECIPITATION_ICON[:LOW]
+      pop >= POP_ALERT_THRESHOLD ? Precipitation.precipitation_icon[:HIGH] : Precipitation.precipitation_icon[:LOW]
     end
   end
 end
@@ -687,11 +747,6 @@ module TooltipBuilder
   DIVIDER_CHAR = '─'
   DIVIDER_LEN = 74
 
-  SUN_ICON = {
-    RISE: '',
-    SET: '󰖚'
-  }.freeze
-
   # Table headers
   HOUR_TABLE_HEADER_TEXT = format(
     '%<hr>-4s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond',
@@ -713,6 +768,13 @@ module TooltipBuilder
   )
 
   class << self
+    def sun_icon
+      {
+        RISE: Icons.get_ui('sun.rise'),
+        SET: Icons.get_ui('sun.set')
+      }
+    end
+
     # --- NEW: This method's ONLY job is to build the waybar text ---
     def build_text(cond:, temp:, code:, is_day:, icon_pos:, fallback_icon:, unit:)
       # icon for current condition
@@ -747,10 +809,10 @@ module TooltipBuilder
       )
 
       tooltip = "#{header_block}\n" \
-                "<b>#{Icons.style_icon('', Config.colors['primary'],
+                "<b>#{Icons.style_icon(Icons.get_ui('clock'), Config.colors['primary'],
                                        Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
                 "#{next_hours_table}\n\n#{divider}\n\n" \
-                "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+                "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
                                        Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
 
       # 3. Return both
@@ -892,9 +954,9 @@ module TooltipBuilder
       astro_line = ''
       if sunrise || sunset
         astro_line = format('%s Sunrise %s | %s Sunset %s',
-                            Icons.style_icon(SUN_ICON[:RISE]),
+                            Icons.style_icon(TooltipBuilder.sun_icon[:RISE]),
                             CGI.escapeHTML(sunrise || '—'),
-                            Icons.style_icon(SUN_ICON[:SET]),
+                            Icons.style_icon(TooltipBuilder.sun_icon[:SET]),
                             CGI.escapeHTML(sunset || '—'))
       end
 
@@ -926,48 +988,14 @@ module TooltipBuilder
       )
 
       astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
-      astro_header = "<b>#{Icons.style_icon(SUN_ICON[:RISE], Config.colors['primary'],
+      astro_header = "<b>#{Icons.style_icon(Icons.get_ui('sun.rise'), Config.colors['primary'],
                                             Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
 
-      detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+      detail_header = "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
                                              Config.pongo_size[:small])} Week Details</b>"
       detail_table = make_3h_table(three_hour_rows, unit, precip_unit)
 
       "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
-    end
-  end
-end
-
-# Handles Icons in terms of mapping via weather_code or styling icon
-module Icons
-  class << self
-    def init
-      @icon_map = load_icon_map(__dir__)
-    end
-
-    def weather_icon(code, is_day)
-      code = code.to_i
-
-      @icon_map.each do |item|
-        next unless item['code'].to_i == code
-
-        return is_day ? (item['icon'] || '') : (item['icon-night'] || '')
-      end
-
-      ''
-    end
-
-    def style_icon(glyph, color = Config.colors['primary'], size = Config.pongo_size[:medium])
-      "<span foreground='#{color}' size='#{size}'>#{glyph} </span>"
-    end
-
-    private
-
-    def load_icon_map(script_path)
-      data = Utils.load_json(File.join(script_path, 'weather_icons.json'))
-      data.is_a?(Array) ? data : []
-    rescue StandardError
-      []
     end
   end
 end
@@ -1127,7 +1155,7 @@ end
 # Initialize configuration modules
 private def initialize_app_config(settings)
   Config.init
-  Icons.init
+  Icons.init(settings[:icon_type])
 
   unit_c = settings[:unit] == 'Celsius'
   unit = unit_c ? '°C' : '°F'
@@ -1210,7 +1238,7 @@ private def run_weather_update(force_refresh: false)
   if use_cache
     # Load from cache
     cache = CacheManager.load_cache
-    location = symbolize_keys(cache['location'])
+    symbolize_keys(cache['location'])
     weather_data = symbolize_weather_data(cache['weather_data'])
     # Update units from cache to ensure consistency
     units = symbolize_keys(cache['units'])

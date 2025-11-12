@@ -1,0 +1,38 @@
+{
+  "nerd": {
+    "thermometer": {
+      "cold": "",
+      "neutral": "",
+      "warm": "",
+      "hot": ""
+    },
+    "precipitation": {
+      "low": "",
+      "high": ""
+    },
+    "sun": {
+      "rise": "",
+      "set": "󰖚"
+    },
+    "clock": "",
+    "calendar": "󰨳"
+  },
+  "emoji": {
+    "thermometer": {
+      "cold": "🥶",
+      "neutral": "😊",
+      "warm": "🥵",
+      "hot": "🔥"
+    },
+    "precipitation": {
+      "low": "💧",
+      "high": "💦"
+    },
+    "sun": {
+      "rise": "🌅",
+      "set": "🌇"
+    },
+    "clock": "⏰",
+    "calendar": "📅"
+  }
+}
