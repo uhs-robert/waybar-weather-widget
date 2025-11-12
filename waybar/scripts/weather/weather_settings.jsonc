@@ -10,7 +10,7 @@
   "hourly_number_of_hours": 12,           // Number of hours to show in hourly tooltip (max 24)
   "daily_number_of_days": 10,             // Number of days for forecast (max 16)
   "colors": {
-    "primary": "#42A5F5",                 // Icon default
+    "primary": "#42A5F5",                 // Nerd Icon default
     "cold": "skyblue",                    // Temp cold
     "neutral": "#42A5F5",                 // Temp neutral
     "warm": "khaki",                      // Temp warm
