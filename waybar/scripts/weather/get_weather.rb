@@ -565,16 +565,221 @@ module ForecastData
   end
 end
 
-# TODO: Consolodiate functions
+# Handles building tooltips and tables for weather display
 module TooltipBuilder
-  # make_hour_table
-  # make_day_table
-  # make_3h_table
-  # make_astro3d_table
-  # build_header_block
-  # build_week_view_tooltip
-  # build_text_and_tooltip
-  # divider
+  class << self
+    # Creates a divider line for tooltip formatting
+    def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = Config.colors['divider'])
+      line = char * [1, length].max
+      "<span font_family='monospace' foreground='#{color}'>#{line}</span>"
+    end
+
+    # Builds a compact table for sunrise/sunset for the dates present in rows
+    def make_astro3d_table(rows, astro_by_date)
+      header = "<span weight='bold'>#{ASTRO3D_HEADER_TEXT}</span>"
+      dates = rows.map { |r| r['date'].to_s }.uniq.sort
+      lines = dates.map do |date|
+        sr, ss = astro_by_date.fetch(date, ['', ''])
+        sr = (sr.empty? ? '—' : sr)[0, 5]
+        ss = (ss.empty? ? '—' : ss)[0, 5]
+        format('%-9s │ %5s │ %5s', Utils.fmt_day_of_week(date), sr, ss)
+      end
+
+      return 'No sunrise/sunset data' if lines.empty?
+
+      "<span font_family='monospace'>#{header}\n#{lines.join("\n")}</span>"
+    end
+
+    # Builds hourly forecast table
+    def make_hour_table(next_hours, unit, precip_unit)
+      header = "<span weight='bold'>#{HOUR_TABLE_HEADER_TEXT}</span>"
+      rows = []
+
+      next_hours.each do |h|
+        temp_txt = "#{h['temp'].round}#{unit}".rjust(5)
+        temp_col = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
+
+        pop_txt = "#{h['pop'].to_i}%".rjust(4)
+        pop_col = "<span foreground='#{Precipitation.color(h['pop'])}'>#{pop_txt}</span>"
+
+        precip_col = format('%<val>.1f %<unit>s', val: h['precip'], unit: precip_unit).rjust(7)
+
+        glyph = Icons.weather_icon(h['code'], h['is_day'] != 0)
+        icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+        cond_cell = "#{icon_html} #{CGI.escapeHTML(h['cond'].to_s)}".strip
+
+        rows << format('%-4s │ %s │ %s │ %s │ %s',
+                       Utils.fmt_hour(h['dt']), temp_col, pop_col, precip_col, cond_cell)
+      end
+
+      return 'No hourly data' if rows.empty?
+
+      "<span font_family='monospace'>#{header}\n#{rows.join("\n")}</span>"
+    end
+
+    # Builds daily forecast table
+    def make_day_table(days, unit, precip_unit)
+      header = "<span weight='bold'>#{DAY_TABLE_HEADER_TEXT}</span>"
+      out_rows = []
+
+      days.each do |d|
+        hi_val = d['max'].round
+        lo_val = d['min'].round
+
+        hi_txt = format('%3d%s', hi_val, unit)
+        lo_txt = format('%3d%s', lo_val, unit)
+
+        hi_col = "<span foreground='#{Temperature.color(d['max'])}'>#{hi_txt}</span>"
+        lo_col = "<span foreground='#{Temperature.color(d['min'])}'>#{lo_txt}</span>"
+
+        pop = [[0, d['pop'].to_i].max, 100].min
+        pop_txt = format('%3d%%', pop)
+        pop_col = "<span foreground='#{Precipitation.color(pop)}'>#{pop_txt}</span>"
+
+        precip_col = format('%<val>.1f %<unit>s', val: d['precip'], unit: precip_unit).rjust(7)
+
+        cond_txt = d['cond'].to_s
+        glyph = Icons.weather_icon(d['code'], true)
+        icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+        cond_cell = "#{icon_html} #{CGI.escapeHTML(cond_txt)}".strip
+
+        row = format('%-9s │ %s │ %s │ %s │ %s │ %s',
+                     Utils.fmt_day_of_week(d['date']), hi_col, lo_col, pop_col, precip_col, cond_cell)
+        out_rows << row
+      end
+
+      return 'No daily data' if out_rows.empty?
+
+      "<span font_family='monospace'>#{header}\n#{out_rows.join("\n")}</span>"
+    end
+
+    # Builds 3-hour interval forecast table
+    def make_3h_table(rows, unit, precip_unit)
+      header = "<span weight='bold'>#{DETAIL3H_HEADER_TEXT}</span>"
+      out = []
+
+      rows.each do |r|
+        temp_txt = "#{r['temp'].round}#{unit}".rjust(5)
+        temp_col = "<span foreground='#{Temperature.color(r['temp'])}'>#{temp_txt}</span>"
+
+        pop_val = [[0, r['pop'].to_i].max, 100].min
+        pop_txt = format('%3d%%', pop_val)
+        pop_col = "<span foreground='#{Precipitation.color(pop_val)}'>#{pop_txt}</span>"
+
+        precip_col = format('%<val>.1f %<unit>s', val: r['precip'], unit: precip_unit).rjust(7)
+
+        glyph = Icons.weather_icon(r['code'], r['is_day'] != 0)
+        icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
+        cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
+
+        out << format('%-9s │ %2s │ %s │ %s │ %s │ %s',
+                      Utils.fmt_day_of_week(r['date']), Utils.fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
+      end
+
+      return 'No 3-hour detail' if out.empty?
+
+      "<span font_family='monospace'>#{header}\n#{out.join("\n")}</span>"
+    end
+
+    # Builds the common header block for tooltips
+    def build_header_block(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
+                           sunrise: nil, sunset: nil, now_pop: nil, precip_amt: nil, precip_unit: '', location_name: nil)
+      # Returns the exact same top block used by all tooltips.
+      display_location = location_name || timezone || 'Local'
+      location_line = format('<b>%s</b>', CGI.escapeHTML(display_location))
+
+      # current conditions + colored thermometer
+      tglyph, tcolor = Temperature.glyph_and_color(feels)
+      current_line = format('%s %s | %s%d%s (feels %d%s)',
+                            Icons.style_icon(Icons.weather_icon(code, is_day != 0) || fallback_icon),
+                            CGI.escapeHTML(cond),
+                            Icons.style_icon(tglyph, tcolor),
+                            temp.round,
+                            unit,
+                            feels.round,
+                            unit)
+
+      # optional sunrise/sunset
+      astro_line = ''
+      if sunrise || sunset
+        astro_line = format('%s Sunrise %s | %s Sunset %s',
+                            Icons.style_icon(ICON[:SUN][:RISE]),
+                            CGI.escapeHTML(sunrise || '—'),
+                            Icons.style_icon(ICON[:SUN][:SET]),
+                            CGI.escapeHTML(sunset || '—'))
+      end
+
+      # optional "now" precip / PoP (colored)
+      now_line = ''
+      if now_pop && precip_amt && !precip_unit.empty?
+        pop_icon_html = Icons.style_icon(Precipitation.icon(now_pop), Precipitation.color(now_pop))
+        now_pop_col = "<span foreground='#{Precipitation.color(now_pop)}'>#{now_pop.to_i}%</span>"
+        now_line = format('%s PoP %s, Precip %.1f%s',
+                          pop_icon_html, now_pop_col, precip_amt, precip_unit)
+      end
+
+      parts = [location_line, '', current_line]
+      parts << astro_line unless astro_line.empty?
+      parts << now_line unless now_line.empty?
+      parts << "\n#{divider}\n"
+      parts.join("\n")
+    end
+
+    # Builds week view tooltip with detailed 3-hour forecast
+    def build_week_view_tooltip(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
+                                three_hour_rows:, precip_unit:, sunrise: nil, sunset: nil,
+                                now_pop: nil, precip_amt: nil, astro_by_date: nil, location_name: nil)
+      header_block = build_header_block(
+        timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
+        code: code, is_day: is_day, fallback_icon: fallback_icon,
+        sunrise: sunrise, sunset: sunset, now_pop: now_pop,
+        precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
+      )
+
+      astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
+      astro_header = "<b>#{Icons.style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
+                                            Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
+
+      detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'], Config.pongo_size[:small])} Week Details</b>"
+      detail_table = make_3h_table(three_hour_rows, unit, precip_unit)
+
+      "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
+    end
+
+    # Builds main text and tooltip for waybar display
+    def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, is_day:, next_hours:,
+                               days:, unit:, precip_unit:, icon_pos:, fallback_icon:,
+                               sunrise:, sunset:, location_name: nil, forecast_days: 16)
+      # icon for current condition
+      cond_icon_raw = Icons.weather_icon(code, is_day != 0) || fallback_icon
+
+      # main text with waybar icon
+      waybar_icon = Icons.style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
+      left = "#{waybar_icon}#{temp.round}#{unit}"
+      right = "#{temp.round}#{unit} #{waybar_icon}"
+      text = (icon_pos || 'left') == 'left' ? left : right
+
+      # tables
+      next_hours_table = make_hour_table(next_hours, unit, precip_unit)
+      next_days_overview_table = make_day_table(days, unit, precip_unit)
+
+      header_block = build_header_block(
+        timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
+        code: code, is_day: is_day, fallback_icon: fallback_icon,
+        sunrise: sunrise, sunset: sunset,
+        now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
+        precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
+      )
+
+      tooltip = "#{header_block}\n" \
+                "<b>#{Icons.style_icon('', Config.colors['primary'],
+                                       Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
+                "#{next_hours_table}\n\n#{divider}\n\n" \
+                "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+                                       Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
+      [text, tooltip]
+    end
+  end
 end
 
 # Handles Icons in terms of mapping via weather_code or styling icon
@@ -647,11 +852,6 @@ end
 
 # ─── Utilities ──────────────────────────────────────────────────────────────
 
-def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = Config.colors['divider'])
-  line = char * [1, length].max
-  "<span font_family='monospace' foreground='#{color}'>#{line}</span>"
-end
-
 # ─── Icons ──────────────────────────────────────────────────────────────────
 def norm(str)
   str.to_s.strip.downcase
@@ -664,207 +864,7 @@ def to_set(val)
   Set[norm(val)]
 end
 
-def make_astro3d_table(rows, astro_by_date)
-  # Build a compact table for sunrise/sunset for the dates present in rows.
-  header = "<span weight='bold'>#{ASTRO3D_HEADER_TEXT}</span>"
-  dates = rows.map { |r| r['date'].to_s }.uniq.sort
-  lines = dates.map do |date|
-    sr, ss = astro_by_date.fetch(date, ['', ''])
-    sr = (sr.empty? ? '—' : sr)[0, 5]
-    ss = (ss.empty? ? '—' : ss)[0, 5]
-    format('%-9s │ %5s │ %5s', Utils.fmt_day_of_week(date), sr, ss)
-  end
-
-  return 'No sunrise/sunset data' if lines.empty?
-
-  "<span font_family='monospace'>#{header}\n#{lines.join("\n")}</span>"
-end
-
 # ─── Tables & Tooltip ───────────────────────────────────────────────────────
-def make_hour_table(next_hours, unit, precip_unit)
-  header = "<span weight='bold'>#{HOUR_TABLE_HEADER_TEXT}</span>"
-  rows = []
-
-  next_hours.each do |h|
-    temp_txt = "#{h['temp'].round}#{unit}".rjust(5)
-    # temp_col = "<span foreground='#{color_for_temp(h['temp'], unit)}'>#{temp_txt}</span>"
-    temp_col = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
-
-    pop_txt = "#{h['pop'].to_i}%".rjust(4)
-    pop_col = "<span foreground='#{Precipitation.color(h['pop'])}'>#{pop_txt}</span>"
-
-    precip_col = format('%<val>.1f %<unit>s', val: h['precip'], unit: precip_unit).rjust(7)
-
-    glyph = Icons.weather_icon(h['code'], h['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
-    cond_cell = "#{icon_html} #{CGI.escapeHTML(h['cond'].to_s)}".strip
-
-    rows << format('%-4s │ %s │ %s │ %s │ %s',
-                   Utils.fmt_hour(h['dt']), temp_col, pop_col, precip_col, cond_cell)
-  end
-
-  return 'No hourly data' if rows.empty?
-
-  "<span font_family='monospace'>#{header}\n#{rows.join("\n")}</span>"
-end
-
-def make_day_table(days, unit, precip_unit)
-  header = "<span weight='bold'>#{DAY_TABLE_HEADER_TEXT}</span>"
-  out_rows = []
-
-  days.each do |d|
-    hi_val = d['max'].round
-    lo_val = d['min'].round
-
-    hi_txt = format('%3d%s', hi_val, unit)
-    lo_txt = format('%3d%s', lo_val, unit)
-
-    hi_col = "<span foreground='#{Temperature.color(d['max'])}'>#{hi_txt}</span>"
-    lo_col = "<span foreground='#{Temperature.color(d['min'])}'>#{lo_txt}</span>"
-
-    pop = [[0, d['pop'].to_i].max, 100].min
-    pop_txt = format('%3d%%', pop)
-    pop_col = "<span foreground='#{Precipitation.color(pop)}'>#{pop_txt}</span>"
-
-    precip_col = format('%<val>.1f %<unit>s', val: d['precip'], unit: precip_unit).rjust(7)
-
-    cond_txt = d['cond'].to_s
-    glyph = Icons.weather_icon(d['code'], true)
-    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
-    cond_cell = "#{icon_html} #{CGI.escapeHTML(cond_txt)}".strip
-
-    row = format('%-9s │ %s │ %s │ %s │ %s │ %s',
-                 Utils.fmt_day_of_week(d['date']), hi_col, lo_col, pop_col, precip_col, cond_cell)
-    out_rows << row
-  end
-
-  return 'No daily data' if out_rows.empty?
-
-  "<span font_family='monospace'>#{header}\n#{out_rows.join("\n")}</span>"
-end
-
-def make_3h_table(rows, unit, precip_unit)
-  header = "<span weight='bold'>#{DETAIL3H_HEADER_TEXT}</span>"
-  out = []
-
-  rows.each do |r|
-    temp_txt = "#{r['temp'].round}#{unit}".rjust(5)
-    temp_col = "<span foreground='#{Temperature.color(r['temp'])}'>#{temp_txt}</span>"
-
-    pop_val = [[0, r['pop'].to_i].max, 100].min
-    pop_txt = format('%3d%%', pop_val)
-    pop_col = "<span foreground='#{Precipitation.color(pop_val)}'>#{pop_txt}</span>"
-
-    precip_col = format('%<val>.1f %<unit>s', val: r['precip'], unit: precip_unit).rjust(7)
-
-    glyph = Icons.weather_icon(r['code'], r['is_day'] != 0)
-    icon_html = glyph.empty? ? '' : Icons.style_icon(glyph, Config.colors['primary'], Config.pongo_size[:small])
-    cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
-
-    out << format('%-9s │ %2s │ %s │ %s │ %s │ %s',
-                  Utils.fmt_day_of_week(r['date']), Utils.fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
-  end
-
-  return 'No 3-hour detail' if out.empty?
-
-  "<span font_family='monospace'>#{header}\n#{out.join("\n")}</span>"
-end
-
-def build_header_block(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
-                       sunrise: nil, sunset: nil, now_pop: nil, precip_amt: nil, precip_unit: '', location_name: nil)
-  # Returns the exact same top block used by all tooltips.
-  display_location = location_name || timezone || 'Local'
-  location_line = format('<b>%s</b>', CGI.escapeHTML(display_location))
-
-  # current conditions + colored thermometer
-  tglyph, tcolor = Temperature.glyph_and_color(feels)
-  current_line = format('%s %s | %s%d%s (feels %d%s)',
-                        Icons.style_icon(Icons.weather_icon(code, is_day != 0) || fallback_icon),
-                        CGI.escapeHTML(cond),
-                        Icons.style_icon(tglyph, tcolor),
-                        temp.round,
-                        unit,
-                        feels.round,
-                        unit)
-
-  # optional sunrise/sunset
-  astro_line = ''
-  if sunrise || sunset
-    astro_line = format('%s Sunrise %s | %s Sunset %s',
-                        Icons.style_icon(ICON[:SUN][:RISE]),
-                        CGI.escapeHTML(sunrise || '—'),
-                        Icons.style_icon(ICON[:SUN][:SET]),
-                        CGI.escapeHTML(sunset || '—'))
-  end
-
-  # optional "now" precip / PoP (colored)
-  now_line = ''
-  if now_pop && precip_amt && !precip_unit.empty?
-    pop_icon_html = Icons.style_icon(Precipitation.icon(now_pop), Precipitation.color(now_pop))
-    now_pop_col = "<span foreground='#{Precipitation.color(now_pop)}'>#{now_pop.to_i}%</span>"
-    now_line = format('%s PoP %s, Precip %.1f%s',
-                      pop_icon_html, now_pop_col, precip_amt, precip_unit)
-  end
-
-  parts = [location_line, '', current_line]
-  parts << astro_line unless astro_line.empty?
-  parts << now_line unless now_line.empty?
-  parts << "\n#{divider}\n"
-  parts.join("\n")
-end
-
-def build_week_view_tooltip(timezone:, cond:, temp:, feels:, unit:, code:, is_day:, fallback_icon:,
-                            three_hour_rows:, precip_unit:, sunrise: nil, sunset: nil,
-                            now_pop: nil, precip_amt: nil, astro_by_date: nil, location_name: nil)
-  header_block = build_header_block(
-    timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
-    code: code, is_day: is_day, fallback_icon: fallback_icon,
-    sunrise: sunrise, sunset: sunset, now_pop: now_pop,
-    precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
-  )
-
-  astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {})
-  astro_header = "<b>#{Icons.style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
-                                        Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
-
-  detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'], Config.pongo_size[:small])} Week Details</b>"
-  detail_table = make_3h_table(three_hour_rows, unit, precip_unit)
-
-  "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
-end
-
-def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, is_day:, next_hours:,
-                           days:, unit:, precip_unit:, icon_pos:, fallback_icon:,
-                           sunrise:, sunset:, location_name: nil, forecast_days: 16)
-  # icon for current condition
-  cond_icon_raw = Icons.weather_icon(code, is_day != 0) || fallback_icon
-
-  # main text with waybar icon
-  waybar_icon = Icons.style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
-  left = "#{waybar_icon}#{temp.round}#{unit}"
-  right = "#{temp.round}#{unit} #{waybar_icon}"
-  text = (icon_pos || 'left') == 'left' ? left : right
-
-  # tables
-  next_hours_table = make_hour_table(next_hours, unit, precip_unit)
-  next_days_overview_table = make_day_table(days, unit, precip_unit)
-
-  header_block = build_header_block(
-    timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
-    code: code, is_day: is_day, fallback_icon: fallback_icon,
-    sunrise: sunrise, sunset: sunset,
-    now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
-    precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
-  )
-
-  tooltip = "#{header_block}\n" \
-            "<b>#{Icons.style_icon('', Config.colors['primary'],
-                                   Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
-            "#{next_hours_table}\n\n#{divider}\n\n" \
-            "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
-                                   Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
-  [text, tooltip]
-end
 
 # ─── Main runner ────────────────────────────────────────────────────────────
 def main
@@ -932,7 +932,7 @@ def main
     fallback_icon = Icons.weather_icon(cur['code'], cur['is_day'] != 0) || ''
 
     # Default tooltip (compact)
-    text_default, tooltip_default = build_text_and_tooltip(
+    text_default, tooltip_default = TooltipBuilder.build_text_and_tooltip(
       timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
       precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
       days: days, unit: unit, precip_unit: precip_unit,
@@ -941,7 +941,7 @@ def main
     )
 
     # Detail tooltip (3-hour view)
-    tooltip_week_view = build_week_view_tooltip(
+    tooltip_week_view = TooltipBuilder.build_week_view_tooltip(
       timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
       unit: unit, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
       three_hour_rows: next_3days_detailed, precip_unit: precip_unit,
