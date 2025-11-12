@@ -34,6 +34,7 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
   - Configurable hour display: as icons, numbers, or both.
   - Uses Nerd Font icons or emoji for weather conditions.
   - All colors are customizable.
+  - Weather-specific icon coloring for Nerd Fonts.
   - You can change the number of hours and days to forecast.
 - **Dynamic Icons:** Weather icons change for day and night.
 - **Command-line Interface:** A simple CLI to toggle between tooltip views.
@@ -111,7 +112,7 @@ Features a tooltip with multiple modes that can be cycled through to view more w
      "hourly_number_of_hours": 12, // Number of hours to show in hourly tooltip (max 24)
      "daily_number_of_days": 10, // Number of days for forecast (max 16)
      "colors": {
-       "primary": "#42A5F5", // Icon default
+       "primary": "#42A5F5", // Default Nerd Font icon color
        "cold": "skyblue", // Temp cold
        "neutral": "#42A5F5", // Temp neutral
        "warm": "khaki", // Temp warm
@@ -122,6 +123,22 @@ Features a tooltip with multiple modes that can be cycled through to view more w
        "pop_vhigh": "#A855F7", // Precipitation very high
        "divider": "#2B3B57", // Divider color
      },
+     "color_weather_icons": true, // Enable weather-specific icon colors for nerd fonts (false = use primary color)
+     "weather_colors": {
+       "clear_day": "#FFAC33", // ☀️
+       "clear_night": "#FAC629", // 🌙
+       "partly_cloudy_day": "#D89C4C", // ⛅
+       "partly_cloudy_night": "#A88E3A", // ☁️
+       "overcast": "#B0B0B0", // ☁️
+       "fog": "#D3D3D3", // 🌫️
+       "drizzle": "#87CEEB", // 💧
+       "rain": "#4A90E2", // 🌧️
+       "heavy_rain": "#1E90FF", // 💦
+       "freezing_rain": "#00CED1", // 🌧️❄️
+       "snow": "#87CEEB", // 🌨️
+       "heavy_snow": "#B0E0E6", // ❄️
+       "thunderstorm": "#9370DB" // ⛈️
+     }
    }
    ```
 
