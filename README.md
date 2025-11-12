@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-A **detailed and customizable** weather widget for Waybar, powered by the Open-Meteo API.
+A <strong>detailed and customizable</strong> weather widget for Waybar, powered by the Open-Meteo API.
 </p>
 
 ![Waybar Weather Widget Screenshot](https://i.imgur.com/example.png) <!-- TODO: Replace with an actual screenshot -->
@@ -39,69 +39,69 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
 
 1. **Clone the repository** or download the files into your `~/.config/waybar/` directory. Your structure should look something like this:
 
-    ```
-    ~/.config/waybar/
-    ├── config.jsonc
-    ├── style.css
-    └── scripts/
-        └── weather/
-            ├── get_weather.rb
-            ├── weather_icons.json
-            └── weather_settings.jsonc
-    ```
+   ```
+   ~/.config/waybar/
+   ├── config.jsonc
+   ├── style.css
+   └── scripts/
+       └── weather/
+           ├── get_weather.rb
+           ├── weather_icons.json
+           └── weather_settings.jsonc
+   ```
 
 2. **Make the script executable:**
 
-    ```bash
-    chmod +x ~/.config/waybar/scripts/weather/get_weather.rb
-    ```
+   ```bash
+   chmod +x ~/.config/waybar/scripts/weather/get_weather.rb
+   ```
 
 ## ⚙️ Configuration
 
 1. **Add the module to your Waybar `config.jsonc`:**
 
-    Add `"custom/weather"` to your `modules-left`, `modules-center`, or `modules-right` section. Then, add the following module configuration:
+   Add `"custom/weather"` to your `modules-left`, `modules-center`, or `modules-right` section. Then, add the following module configuration:
 
-    ```jsonc
-    "custom/weather": {
-        "format": "{}",
-        "tooltip": true,
-        "return-type": "json",
-        "exec": "~/.config/waybar/scripts/weather/get_weather.rb",
-        "on-click": "~/.config/waybar/scripts/weather/get_weather.rb --next", // Cycle views
-        "interval": 900 // Every 15 minutes
-    },
-    ```
+   ```jsonc
+   "custom/weather": {
+       "format": "{}",
+       "tooltip": true,
+       "return-type": "json",
+       "exec": "~/.config/waybar/scripts/weather/get_weather.rb",
+       "on-click": "~/.config/waybar/scripts/weather/get_weather.rb --next", // Cycle views
+       "interval": 900 // Every 15 minutes
+   },
+   ```
 
 2. **Configure the weather script:**
 
-    Edit `~/.config/waybar/scripts/weather/weather_settings.jsonc` to customize the widget.
+   Edit `~/.config/waybar/scripts/weather/weather_settings.jsonc` to customize the widget.
 
-    ```jsonc
-    {
-      "latitude": "auto", // e.g., 40.71 or "auto" to detect from IP address
-      "longitude": "auto", // e.g., -74.01 or "auto" to detect from IP address
-      "refresh_interval": 900, // Seconds between API calls (e.g., 900 = 15 min)
-      "unit": "Fahrenheit", // "Fahrenheit" or "Celsius"
-      "icon_type": "nerd_font", // "nerd_font" or "emoji"
-      "icon_position": "left", // "left" or "right"
-      "font_size": 14, // Base font size for icons
-      "hours_ahead": 24, // Number of hours to show in hourly tooltip
-      "forecast_days": 10, // Number of days for forecast (max 16)
-      "colors": {
-        "primary": "#42A5F5", // Icon default
-        "cold": "skyblue", // Temp cold
-        "neutral": "#42A5F5", // Temp neutral
-        "warm": "khaki", // Temp warm
-        "hot": "indianred", // Temp hot
-        "pop_low": "#EAD7FF", // Precipitation low
-        "pop_med": "#CFA7FF", // Precipitation medium
-        "pop_high": "#BC85FF", // Precipitation high
-        "pop_vhigh": "#A855F7", // Precipitation very high
-        "divider": "#2B3B57", // Divider color
-      },
-    }
-    ```
+   ```jsonc
+   {
+     "latitude": "auto", // e.g., 40.71 or "auto" to detect from IP address
+     "longitude": "auto", // e.g., -74.01 or "auto" to detect from IP address
+     "refresh_interval": 900, // Seconds between API calls (e.g., 900 = 15 min)
+     "unit": "Fahrenheit", // "Fahrenheit" or "Celsius"
+     "icon_type": "nerd_font", // "nerd_font" or "emoji"
+     "icon_position": "left", // "left" or "right"
+     "font_size": 14, // Base font size for icons
+     "hours_ahead": 24, // Number of hours to show in hourly tooltip
+     "forecast_days": 10, // Number of days for forecast (max 16)
+     "colors": {
+       "primary": "#42A5F5", // Icon default
+       "cold": "skyblue", // Temp cold
+       "neutral": "#42A5F5", // Temp neutral
+       "warm": "khaki", // Temp warm
+       "hot": "indianred", // Temp hot
+       "pop_low": "#EAD7FF", // Precipitation low
+       "pop_med": "#CFA7FF", // Precipitation medium
+       "pop_high": "#BC85FF", // Precipitation high
+       "pop_vhigh": "#A855F7", // Precipitation very high
+       "divider": "#2B3B57", // Divider color
+     },
+   }
+   ```
 
 ## 💡 Usage
 
