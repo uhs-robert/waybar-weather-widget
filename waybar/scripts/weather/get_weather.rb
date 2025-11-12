@@ -104,19 +104,6 @@ module Utils
       # e.g., 'Mon 10/06'
       Time.strptime(datestr, '%Y-%m-%d').strftime('%a %m/%d')
     end
-
-    # Normalizes a string by stripping whitespace and downcasing.
-    def norm(str)
-      str.to_s.strip.downcase
-    end
-
-    # Converts a value (nil, string, or array) into a Set of normalized strings.
-    def to_set(val)
-      return Set.new if val.nil?
-      return Set.new(val.map { |x| norm(x) }) if val.is_a?(Array)
-
-      Set[norm(val)]
-    end
   end
 end
 
@@ -568,6 +555,50 @@ end
 # Handles building tooltips and tables for weather display
 module TooltipBuilder
   class << self
+    # --- NEW: This method's ONLY job is to build the waybar text ---
+    def build_text(cond:, temp:, code:, is_day:, icon_pos:, fallback_icon:, unit:)
+      # icon for current condition
+      cond_icon_raw = Icons.weather_icon(code, is_day != 0) || fallback_icon
+
+      # main text with waybar icon
+      waybar_icon = Icons.style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
+      left = "#{waybar_icon}#{temp.round}#{unit}"
+      right = "#{temp.round}#{unit} #{waybar_icon}"
+      (icon_pos || 'left') == 'left' ? left : right
+    end
+
+    def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, is_day:, next_hours:,
+                               days:, unit:, precip_unit:, icon_pos:, fallback_icon:,
+                               sunrise:, sunset:, location_name: nil, forecast_days: 16)
+      # 1. Call the new method to get the text
+      text = build_text(
+        cond: cond, temp: temp, code: code, is_day: is_day,
+        icon_pos: icon_pos, fallback_icon: fallback_icon, unit: unit
+      )
+
+      # 2. Build the tooltip (all this logic is the same as before)
+      next_hours_table = make_hour_table(next_hours, unit, precip_unit)
+      next_days_overview_table = make_day_table(days, unit, precip_unit)
+
+      header_block = build_header_block(
+        timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
+        code: code, is_day: is_day, fallback_icon: fallback_icon,
+        sunrise: sunrise, sunset: sunset,
+        now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
+        precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
+      )
+
+      tooltip = "#{header_block}\n" \
+                "<b>#{Icons.style_icon('', Config.colors['primary'],
+                                       Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
+                "#{next_hours_table}\n\n#{divider}\n\n" \
+                "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+                                       Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
+
+      # 3. Return both
+      [text, tooltip]
+    end
+
     # Creates a divider line for tooltip formatting
     def divider(length = DIVIDER_LEN, char = DIVIDER_CHAR, color = Config.colors['divider'])
       line = char * [1, length].max
@@ -740,44 +771,11 @@ module TooltipBuilder
       astro_header = "<b>#{Icons.style_icon(ICON[:SUN][:RISE], Config.colors['primary'],
                                             Config.pongo_size[:small])} Week Sunrise / Sunset</b>"
 
-      detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'], Config.pongo_size[:small])} Week Details</b>"
+      detail_header = "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
+                                             Config.pongo_size[:small])} Week Details</b>"
       detail_table = make_3h_table(three_hour_rows, unit, precip_unit)
 
       "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
-    end
-
-    # Builds main text and tooltip for waybar display
-    def build_text_and_tooltip(timezone:, cond:, temp:, feels:, precip_amt:, code:, is_day:, next_hours:,
-                               days:, unit:, precip_unit:, icon_pos:, fallback_icon:,
-                               sunrise:, sunset:, location_name: nil, forecast_days: 16)
-      # icon for current condition
-      cond_icon_raw = Icons.weather_icon(code, is_day != 0) || fallback_icon
-
-      # main text with waybar icon
-      waybar_icon = Icons.style_icon(cond_icon_raw, Config.colors['primary'], Config.pongo_size[:small])
-      left = "#{waybar_icon}#{temp.round}#{unit}"
-      right = "#{temp.round}#{unit} #{waybar_icon}"
-      text = (icon_pos || 'left') == 'left' ? left : right
-
-      # tables
-      next_hours_table = make_hour_table(next_hours, unit, precip_unit)
-      next_days_overview_table = make_day_table(days, unit, precip_unit)
-
-      header_block = build_header_block(
-        timezone: timezone, cond: cond, temp: temp, feels: feels, unit: unit,
-        code: code, is_day: is_day, fallback_icon: fallback_icon,
-        sunrise: sunrise, sunset: sunset,
-        now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
-        precip_amt: precip_amt, precip_unit: precip_unit, location_name: location_name
-      )
-
-      tooltip = "#{header_block}\n" \
-                "<b>#{Icons.style_icon('', Config.colors['primary'],
-                                       Config.pongo_size[:small])} Next #{next_hours.length} hours</b>\n\n" \
-                "#{next_hours_table}\n\n#{divider}\n\n" \
-                "<b>#{Icons.style_icon('󰨳', Config.colors['primary'],
-                                       Config.pongo_size[:small])} Next #{forecast_days} Days</b>\n\n#{next_days_overview_table}"
-      [text, tooltip]
     end
   end
 end
@@ -850,132 +848,120 @@ module WeatherCode
   }.freeze
 end
 
-# ─── Utilities ──────────────────────────────────────────────────────────────
-
-# ─── Icons ──────────────────────────────────────────────────────────────────
-def norm(str)
-  str.to_s.strip.downcase
-end
-
-def to_set(val)
-  return Set.new if val.nil?
-  return Set.new(val.map { |x| norm(x) }) if val.is_a?(Array)
-
-  Set[norm(val)]
-end
-
-# ─── Tables & Tooltip ───────────────────────────────────────────────────────
-
 # ─── Main runner ────────────────────────────────────────────────────────────
 def main
-  # quick mode ops (no network)
-  unless ARGV.empty?
-    arg = ARGV[0]
-    if %w[--next --toggle].include?(arg)
-      WeatherMode.cycle
-      return
-    elsif arg == '--prev'
-      WeatherMode.cycle('prev')
-      return
-    elsif arg == '--set' && ARGV.length > 1
-      WeatherMode.set(ARGV[1])
-      return
-    end
+  if ARGV.empty?
+    run_weather_update
+  else
+    handle_cli_args(ARGV)
+  end
+end
+
+private def handle_cli_args(args)
+  arg = args[0]
+  if %w[--next --toggle].include?(arg)
+    WeatherMode.cycle
+  elsif arg == '--prev'
+    WeatherMode.cycle('prev')
+  elsif arg == '--set' && args.length > 1
+    WeatherMode.set(args[1])
+  else
+    run_weather_update
+  end
+end
+
+# New method containing all the main application logic
+private def run_weather_update
+  # --- 1. Initialization ---
+  Config.init
+  Icons.init
+  mode = WeatherMode.get
+
+  # --- 2. Get Config Settings ---
+  settings = Config.settings
+  unit_c = settings[:unit] == 'Celsius'
+  unit = unit_c ? '°C' : '°F'
+  precip_unit = unit_c ? 'mm' : 'in'
+
+  Temperature.init(
+    unit: unit,
+    bias: SEASONAL_BIAS,
+    month: Time.now.month
+  )
+
+  # --- 3. Get Location ---
+  location_name = nil
+  if settings[:latitude].to_s == 'auto' || settings[:longitude].to_s == 'auto'
+    geo_data = ForecastData.fetch_location_from_ip
+    lat = geo_data['lat']
+    lon = geo_data['lon']
+    location_name = geo_data['location_name']
+  else
+    lat = Utils.parse_float(settings[:latitude])
+    lon = Utils.parse_float(settings[:longitude])
   end
 
-  begin
-    Config.init
-    mode = WeatherMode.get
+  # --- 4. Fetch and Parse Data ---
+  blob = ForecastData.fetch_openmeteo_forecast(lat, lon, unit_c, settings[:forecast_days])
+  cur = ForecastData.extract_current(blob, unit, location_name)
+  days = ForecastData.build_next_days(blob, settings[:forecast_days])
+  next_hours = ForecastData.build_next_hours(blob, cur['now_local'], settings[:hours_ahead])
+  sunrise, sunset = ForecastData.get_sun_times(days, cur['now_local'])
+  fallback_icon = Icons.weather_icon(cur['code'], cur['is_day'] != 0) || ''
 
-    # Parse config
-    unit_c = Config.settings[:unit] == 'Celsius'
-    hours_ahead = (Config.settings[:hours_ahead] || 24).to_i
-    forecast_days = (Config.settings[:forecast_days] || 16).to_i
-    icon_pos = (Config.settings[:icon_position] || 'left').to_s
-    lat_cfg = Config.settings[:latitude].to_s.strip.downcase
-    lon_cfg = Config.settings[:longitude].to_s.strip.downcase
-    unit = unit_c ? '°C' : '°F'
-    precip_unit = unit_c ? 'mm' : 'in'
+  # --- 5. Build Output (Lazy) ---
+  text = nil
+  tooltip = nil
 
-    # Init Temperature
-    Temperature.init(
-      unit: unit,
-      bias: SEASONAL_BIAS,
-      month: Time.now.month
-    )
-
-    # Detect location
-    location_name = nil
-    if lat_cfg == 'auto' || lon_cfg == 'auto'
-      # Fetch location from IP
-      geo_data = ForecastData.fetch_location_from_ip
-      lat = geo_data['lat']
-      lon = geo_data['lon']
-      location_name = geo_data['location_name']
-    else
-      # Use hardcoded coordinates
-      lat = Utils.parse_float(cfg['latitude'])
-      lon = Utils.parse_float(cfg['longitude'])
-    end
-
-    # data
-    blob = ForecastData.fetch_openmeteo_forecast(lat, lon, unit_c, forecast_days)
-    cur = ForecastData.extract_current(blob, unit, location_name)
-    next_hours = ForecastData.build_next_hours(blob, cur['now_local'], hours_ahead)
-    days = ForecastData.build_next_days(blob, forecast_days)
-    next_3days_detailed = ForecastData.build_next_3days_detailed(blob, cur['now_local'], 3)
-    sunrise, sunset = ForecastData.get_sun_times(days, cur['now_local'])
+  if mode == 'weekview'
+    # Build the detailed week view
+    next_3days = ForecastData.build_next_3days_detailed(blob, cur['now_local'], 3)
     astro_by_date = ForecastData.build_astro_by_date(days)
 
-    # icons
-    Icons.init
-    fallback_icon = Icons.weather_icon(cur['code'], cur['is_day'] != 0) || ''
-
-    # Default tooltip (compact)
-    text_default, tooltip_default = TooltipBuilder.build_text_and_tooltip(
-      timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
-      precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
-      days: days, unit: unit, precip_unit: precip_unit,
-      icon_pos: icon_pos, fallback_icon: fallback_icon, sunrise: sunrise, sunset: sunset,
-      location_name: cur['location_name'], forecast_days: forecast_days
+    # --- THIS IS THE FIX ---
+    # Call the new, simple build_text method
+    text = TooltipBuilder.build_text(
+      cond: cur['cond'], temp: cur['temp'], code: cur['code'], is_day: cur['is_day'],
+      icon_pos: settings[:icon_position], fallback_icon: fallback_icon, unit: unit
     )
 
-    # Detail tooltip (3-hour view)
-    tooltip_week_view = TooltipBuilder.build_week_view_tooltip(
+    tooltip = TooltipBuilder.build_week_view_tooltip(
       timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
       unit: unit, code: cur['code'], is_day: cur['is_day'], fallback_icon: fallback_icon,
-      three_hour_rows: next_3days_detailed, precip_unit: precip_unit,
+      three_hour_rows: next_3days, precip_unit: precip_unit,
       sunrise: sunrise, sunset: sunset,
       now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
       precip_amt: cur['precip_amt'], astro_by_date: astro_by_date,
       location_name: cur['location_name']
     )
-
-    text = text_default
-    tooltip = mode == 'weekview' ? tooltip_week_view : tooltip_default
-
-    classes = [
-      'weather',
-      mode == 'weekview' ? 'mode-weekview' : 'mode-default',
-      next_hours.any? && next_hours[0]['pop'].to_i >= 60 ? 'pop-high' : 'pop-low'
-    ]
-
-    out = {
-      text: text,
-      tooltip: tooltip,
-      alt: cur['cond'],
-      class: classes
-    }
-
-    puts JSON.generate(out)
-  rescue Net::HTTPError, SocketError, Timeout::Error => e
-    sleep 2
-    puts JSON.generate(text: '…', tooltip: "network error: #{e.message}")
-  rescue JSON::ParserError, KeyError => e
-    puts JSON.generate(text: '', tooltip: "parse error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
-  rescue StandardError => e
-    puts JSON.generate(text: '!', tooltip: "unexpected error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+  else
+    # Build the default view
+    text, tooltip = TooltipBuilder.build_text_and_tooltip(
+      timezone: cur['timezone'], cond: cur['cond'], temp: cur['temp'], feels: cur['feels'],
+      precip_amt: cur['precip_amt'], code: cur['code'], is_day: cur['is_day'], next_hours: next_hours,
+      days: days, unit: unit, precip_unit: precip_unit,
+      icon_pos: settings[:icon_position], fallback_icon: fallback_icon, sunrise: sunrise, sunset: sunset,
+      location_name: cur['location_name'], forecast_days: settings[:forecast_days]
+    )
   end
+
+  classes = [
+    'weather',
+    mode == 'weekview' ? 'mode-weekview' : 'mode-default',
+    next_hours.any? && next_hours[0]['pop'].to_i >= 60 ? 'pop-high' : 'pop-low'
+  ]
+
+  out = { text: text, tooltip: tooltip, alt: cur['cond'], class: classes }
+  puts JSON.generate(out)
+
+# --- 6. Error Handling ---
+rescue Net::HTTPError, SocketError, Timeout::Error => e
+  sleep 2
+  puts JSON.generate(text: '…', tooltip: "network error: #{e.message}")
+rescue JSON::ParserError, KeyError => e
+  puts JSON.generate(text: '', tooltip: "parse error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+rescue StandardError => e
+  puts JSON.generate(text: '!', tooltip: "unexpected error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
 end
 
 main if __FILE__ == $PROGRAM_NAME
