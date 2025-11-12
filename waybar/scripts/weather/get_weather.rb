@@ -139,6 +139,11 @@ module Config
       SETTING_KEY_MAP.each do |config_key, settings_key|
         @settings[settings_key] = user_config[config_key] if user_config.key?(config_key)
       end
+
+      # Enforce maximum limit for hours_ahead (max 24 hours)
+      if @settings[:hours_ahead]
+        @settings[:hours_ahead] = [[1, @settings[:hours_ahead].to_i].max, 24].min
+      end
     end
 
     def colors
