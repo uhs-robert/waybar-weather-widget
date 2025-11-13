@@ -125,15 +125,15 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
    {
      "latitude": "auto", // e.g., 40.71 or "auto" to detect from IP address
      "longitude": "auto", // e.g., -74.01 or "auto" to detect from IP address
-     "refresh_interval": 900, // Seconds between API calls (e.g., 900 = 15 min)
      "unit": "Fahrenheit", // "Fahrenheit" or "Celsius"
      "time_format": "24h", // "24h" or "12h"
      "hour_display": "number", // "icons", "number", or "both"
-     "icon_type": "nerd", // "nerd" or "emoji"
-     "icon_position": "left", // "left" or "right"
-     "font_size": 14, // Base font size for icons (in px)
      "hourly_number_of_hours": 12, // Number of hours to show in hourly tooltip (max 24)
      "daily_number_of_days": 10, // Number of days for forecast (max 16)
+     "refresh_interval": 900, // Seconds between API calls (e.g., 900 = 15 min)
+     "icon_type": "nerd", // "nerd" or "emoji"
+     "icon_position": "left", // "left" or "right"
+     "font_size": 14, // Base font size in px
      "colors": {
        "primary": "#42A5F5", // Default Nerd Font icon color
        "cold": "skyblue", // Temp cold
@@ -144,7 +144,7 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
        "pop_med": "#CFA7FF", // Precipitation medium
        "pop_high": "#BC85FF", // Precipitation high
        "pop_vhigh": "#A855F7", // Precipitation very high
-       "divider": "#2B3B57", // Divider color
+       "divider": "#2B3B57" // Divider color
      },
      "color_weather_icons": true, // Enable weather-specific icon colors for nerd fonts (false = use primary color)
      "weather_colors": {
@@ -160,8 +160,8 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
        "freezing_rain": "#00CED1", // 🌧️❄️
        "snow": "#87CEEB", // 🌨️
        "heavy_snow": "#B0E0E6", // ❄️
-       "thunderstorm": "#9370DB", // ⛈️
-     },
+       "thunderstorm": "#9370DB" // ⛈️
+     }
    }
    ```
 
