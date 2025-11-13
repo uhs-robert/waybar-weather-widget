@@ -27,7 +27,7 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
 - **Geolocation:** Automatically detects your location via your IP address, or you can set a manual latitude/longitude.
 - **Detailed Tooltips:**
   - **Default View:** Shows current details, an hourly forecast (default 12 hours, max 24), and a multi-day forecast (up to 16 days).
-  - **Week View:** Shows a detailed 3-hour interval forecast for the next few days, including sunrise/sunset times, and a 3-day snapshot.
+  - **Week View:** Shows a detailed 3-hour interval forecast for the next few days, including sunrise/sunset times, and a snapshot of the next few days (default 2, max 3).
 - **Customizable:**
   - Supports both Celsius and Fahrenheit.
   - Supports both 12-hour (AM/PM) and 24-hour time formats.
@@ -35,7 +35,7 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
   - Uses Nerd Font icons or emoji for weather conditions.
   - All colors are customizable.
   - Weather-specific icon coloring for Nerd Fonts.
-  - You can change the number of hours and days to forecast.
+  - You can change the number of hours and days to forecast, and the number of days in the week view snapshot.
 - **Dynamic Icons:** Weather icons change for day and night.
 - **Command-line Interface:** A simple CLI to toggle between tooltip views.
 
@@ -130,6 +130,7 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
      "hour_display": "number", // "icons", "number", or "both"
      "hourly_number_of_hours": 12, // Number of hours to show in hourly tooltip (max 24)
      "daily_number_of_days": 10, // Number of days for forecast (max 16)
+     "snapshot_number_of_days": 2, // Number of days for week view snapshot (max 3)
      "refresh_interval": 900, // Seconds between API calls (e.g., 900 = 15 min)
      "icon_type": "nerd", // "nerd" or "emoji"
      "icon_position": "left", // "left" or "right"
