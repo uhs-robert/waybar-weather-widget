@@ -186,9 +186,9 @@ module Config
       end
 
       # Enforce maximum limit for snapshot_number_of_days
-      if @settings[:snapshot_number_of_days]
-        @settings[:snapshot_number_of_days] = [[1, @settings[:snapshot_number_of_days].to_i].max, 3].min
-      end
+      return unless @settings[:snapshot_number_of_days]
+
+      @settings[:snapshot_number_of_days] = [[1, @settings[:snapshot_number_of_days].to_i].max, 3].min
     end
 
     def colors
@@ -332,8 +332,6 @@ module Icons
                     'heavy_snow'
                   when 95, 96, 99
                     'thunderstorm'
-                  else
-                    nil
                   end
 
       # Return the color or fall back to primary
@@ -887,8 +885,8 @@ module TooltipBuilder
   )
 
   ASTRO3D_HEADER_TEXT = format(
-    '%-<date>9s │ %<rise>5s │ %<set>5s',
-    date: 'Date', rise: 'Rise', set: 'Set'
+    '%-<date>9s │ %<rise>5s │ %<set>5s │ %<day>7s │ %<night>8s',
+    date: 'Date', rise: 'Rise', set: 'Set', day: 'Day L.', night: 'Night L.'
   )
 
   class << self
@@ -973,15 +971,43 @@ module TooltipBuilder
                 rows.map { |r| r['date'].to_s }.uniq.sort
               end
       lines = dates.map do |date|
-        sr, ss = astro_by_date.fetch(date, ['', ''])
-        sr = (sr.empty? ? '—' : sr)[0, 5]
-        ss = (ss.empty? ? '—' : ss)[0, 5]
-        format('%-9s │ %5s │ %5s', Utils.fmt_day_of_week(date), sr, ss)
+        sunrise, sunset = astro_by_date.fetch(date, ['', ''])
+        sunrise = (sunrise.empty? ? '—' : sunrise)[0, 5]
+        sunset = (sunset.empty? ? '—' : sunset)[0, 5]
+
+        day_len, night_len = calculate_day_night_length(astro_by_date.fetch(date, ['', '']))
+
+        format('%-9s │ %5s │ %5s │ %7s │ %8s', Utils.fmt_day_of_week(date), sunrise, sunset, day_len, night_len)
       end
 
       return 'No sunrise/sunset data' if lines.empty?
 
       "<span font_family='monospace'>#{header}\n#{lines.join("\n")}</span>"
+    end
+
+    # Calculates day length (sunrise to sunset) and night length (24h - day length)
+    #
+    # @param sun_times [Array<String>] Array with [sunrise_time, sunset_time] in 'HH:MM' format
+    # @return [Array<String>] Array with [day_length, night_length] in 'HH:MM' format
+    def calculate_day_night_length(sun_times)
+      sunrise, sunset = sun_times
+      return ['—', '—'] if sunrise.empty? || sunset.empty?
+
+      # Parse times (assuming HH:MM format)
+      sunrise_parts = sunrise.split(':').map(&:to_i)
+      sunset_parts = sunset.split(':').map(&:to_i)
+
+      # Convert to minutes
+      sunrise_mins = sunrise_parts[0] * 60 + sunrise_parts[1]
+      sunset_mins = sunset_parts[0] * 60 + sunset_parts[1]
+      day_mins = sunset_mins - sunrise_mins
+      night_mins = 24 * 60 - day_mins
+
+      # Format as HH:MM
+      day_len = format('%2dh %02dm', day_mins / 60, day_mins % 60)
+      night_len = format('%2dh %02dm', night_mins / 60, night_mins % 60)
+
+      [day_len, night_len]
     end
 
     # Builds hourly forecast table
@@ -1158,7 +1184,7 @@ module TooltipBuilder
       astro_header = "<b>#{Icons.style_icon(Icons.get_ui('sun.rise'), Config.colors['primary'],
                                             Config.pongo_size[:small])} Sunrise / Sunset</b>"
 
-      snapshot_label = snapshot_days ? "Next #{snapshot_days} Day(s) Snapshot" : "Snapshot"
+      snapshot_label = snapshot_days ? "Next #{snapshot_days} Day(s) Snapshot" : 'Snapshot'
       detail_header = "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
                                              Config.pongo_size[:small])} #{snapshot_label}</b>"
       detail_table = make_3h_table(three_hour_rows)
