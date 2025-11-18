@@ -27,7 +27,7 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
 - **Geolocation:** Automatically detects your location via your IP address, or you can set a manual latitude/longitude.
 - **Detailed Tooltips:**
   - **Default View:** Shows current details, an hourly forecast (default 12 hours, max 24), and a multi-day forecast (up to 16 days).
-  - **Week View:** Shows a detailed 3-hour interval forecast for the next few days, including sunrise/sunset times, and a snapshot of the next few days (default 2, max 3).
+  - **Week View:** Shows a detailed 3-hour interval forecast for the next few days, including sunrise/sunset times with day/night length, the current moon phase, and a snapshot of the next few days (default 2, max 3).
 - **Customizable:**
   - Supports both Celsius and Fahrenheit.
   - Supports both 12-hour (AM/PM) and 24-hour time formats.
@@ -37,6 +37,8 @@ It provides current weather, hourly forecasts, and a multi-day forecast with a c
   - Weather-specific icon coloring for Nerd Fonts.
   - You can change the number of hours and days to forecast, and the number of days in the week view snapshot.
 - **Dynamic Icons:** Weather icons change for day and night.
+- **Moon Phase:** Displays the current moon phase icon in the `weekview` tooltip.
+- **Day/Night Length:** Shows the duration of day and night in the `weekview` tooltip.
 - **Command-line Interface:** A simple CLI to toggle between tooltip views.
 
 ## 📸 Screenshots
@@ -57,7 +59,7 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
     </td>
     <td align="center">
       <img src="./assets/screenshots/nerd_week.png" alt="Week Details" width="auto"><br>
-      <strong>Week Details</strong><br><em>Sunrise/Sunset, 3-Hour Snapshot</em>
+      <strong>Week Details</strong><br><em>Sunrise/Sunset, Day/Night Length, Moon Phase, 3-Hour Snapshot</em>
     </td>
   </tr>
 </table>
@@ -74,7 +76,7 @@ In addition, you can use [nerd fonts](#nerd-font-view) or [emojis](#emoji-view) 
     </td>
     <td align="center">
       <img src="./assets/screenshots/emoji_week.png" alt="Week Details" width="auto"><br>
-      <strong>Week Details</strong><br><em>Sunrise/Sunset, 3-Hour Snapshot</em>
+      <strong>Week Details</strong><br><em>Sunrise/Sunset, Day/Night Length, Moon Phase, 3-Hour Snapshot</em>
     </td>
   </tr>
 </table>
