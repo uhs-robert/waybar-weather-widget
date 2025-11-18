@@ -29,6 +29,17 @@
       "10": "󱑈 ",
       "11": "󱑉 ",
       "12": "󱑊 "
+    },
+    "moon": {
+      "night": "󰖔",
+      "new": "󰽤",
+      "waxing_crescent": "󰽧",
+      "first_quarter": "󰽡",
+      "waxing_gibbous": "󰽨",
+      "full": "󰽢",
+      "waning_gibbous": "󰽦",
+      "last_quarter": "󰽣",
+      "waning_crescent": "󰽥"
     }
   },
   "emoji": {
@@ -61,6 +72,17 @@
       "10": "🕙",
       "11": "🕚",
       "12": "🕛"
+    },
+    "moon": {
+      "night": "🌛",
+      "new": "🌑",
+      "waxing_crescent": "🌒",
+      "first_quarter": "🌓",
+      "waxing_gibbous": "🌔",
+      "full": "🌕",
+      "waning_gibbous": "🌖",
+      "last_quarter": "🌗",
+      "waning_crescent": "🌘"
     }
   }
 }
