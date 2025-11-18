@@ -19,34 +19,6 @@ A <strong>detailed and customizable</strong> weather widget for Waybar, powered 
 
 <https://github.com/user-attachments/assets/1808f67f-fed6-4acc-b7cc-393a75918aa2>
 
-## ✨ Features
-
-The only weather widget you'll ever need. Feature rich, customizable, and clean with multiple tooltips.
-
-- **Current Weather:** Displays the current temperature and a weather icon for current conditions.
-- **Geolocation:** Automatically detects your location via your IP address, or you can set a manual latitude/longitude.
-- **Dynamic Icons:** Weather icons change for day and night.
-- **Detailed Tooltips:**
-  - **Default View:**
-    - Current weather details
-    - Hourly forecast (default 12 hours, max 24)
-    - Multi-day forecast (up to 16 days).
-  - **Week View:**:
-    - Sunrise/sunset times with day/night length
-    - Moon phases
-    - A snapshot of the next few days via 3-hour intervals (default 2 days, max 3)
-- **Customizable:**
-  - Celsius or Fahrenheit
-  - 12-hour (AM/PM) or 24-hour time format
-  - Change hour display: icons, numbers, or both.
-  - Use Emojis or Nerd Font icons for UI and weather conditions.
-  - Customize total hours and days for each forecast type.
-  - All colors are customizable.
-  - Weather-specific icon coloring for Nerd Fonts.
-- **Moon Phase:** Displays the current moon phase icon in the `weekview` tooltip.
-- **Day/Night Length:** Shows the duration of day and night in the `weekview` tooltip.
-- **Command-line Interface:** A simple CLI to toggle between tooltip views.
-
 ## 📸 Screenshots
 
 Features a tooltip with multiple modes that can be cycled through via click to view more weather data.
@@ -84,6 +56,34 @@ Features a tooltip with multiple modes that can be cycled through via click to v
     </td>
   </tr>
 </table>
+
+## ✨ Features
+
+The only weather widget you'll ever need. Feature rich, customizable, and clean with multiple tooltips.
+
+- **Current Weather:** Displays the current temperature and a weather icon for current conditions.
+- **Geolocation:** Automatically detects your location via your IP address, or you can set a manual latitude/longitude.
+- **Dynamic Icons:** Weather icons change for day and night.
+- **Detailed Tooltips:**
+  - **Default View:**
+    - Current weather details
+    - Hourly forecast (default 12 hours, max 24)
+    - Multi-day forecast (up to 16 days).
+  - **Week View:**:
+    - Sunrise/sunset times with day/night length
+    - Moon phases
+    - A snapshot of the next few days via 3-hour intervals (default 2 days, max 3)
+- **Customizable:**
+  - Celsius or Fahrenheit
+  - 12-hour (AM/PM) or 24-hour time format
+  - Change hour display: icons, numbers, or both.
+  - Use Emojis or Nerd Font icons for UI and weather conditions.
+  - Customize total hours and days for each forecast type.
+  - All colors are customizable.
+  - Weather-specific icon coloring for Nerd Fonts.
+- **Moon Phase:** Displays the current moon phase icon in the `weekview` tooltip.
+- **Day/Night Length:** Shows the duration of day and night in the `weekview` tooltip.
+- **Command-line Interface:** A simple CLI to toggle between tooltip views.
 
 ## ⬇️ Installation
 
