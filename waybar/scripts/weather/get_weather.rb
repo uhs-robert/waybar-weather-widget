@@ -241,7 +241,8 @@ module Config
       @settings[:pongo_size] = {
         small: (current_size - 2) * 1000,
         medium: current_size * 1000,
-        large: (current_size + 4) * 1000
+        large: (current_size + 2) * 1000,
+        xlarge: (current_size + 18) * 1000
       }
     end
 
@@ -1025,12 +1026,6 @@ module TooltipBuilder
   DIVIDER_CHAR = '─'
   DIVIDER_LEN = 74
 
-  # Table headers (static width tables only)
-  DAY_TABLE_HEADER_TEXT = format(
-    '%-<day>9s │ %<hi>5s │ %<lo>5s │ %<pop>4s │ %<precip>7s │ Cond',
-    day: 'Day', hi: 'Hi', lo: 'Lo', pop: 'PoP', precip: 'Precip'
-  )
-
   ASTRO3D_HEADER_TEXT = format(
     '%-<date>9s │ %<rise>5s │ %<set>5s │ %<day>7s │ %<night>8s │ %<moon>10s',
     date: 'Date', rise: 'Rise', set: 'Set', day: 'Day L.', night: 'Night L.', moon: 'Moon Phase'
@@ -1090,15 +1085,16 @@ module TooltipBuilder
         code: code, is_day: is_day, fallback_icon: fallback_icon,
         sunrise: sunrise, sunset: sunset, moon_phase: moon_phase,
         now_pop: next_hours.empty? ? nil : next_hours[0]['pop'].to_i,
-        precip_amt: precip_amt, location_name: location_name
+        precip_amt: precip_amt, location_name: location_name,
+        today_high: days[0]&.dig('max'), today_low: days[0]&.dig('min')
       )
 
       tooltip = "#{header_block}\n" \
+                "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
+                                       Config.pongo_size[:small])} Daily</b>\n\n#{next_days_overview_table}\n\n#{divider}\n" \
                 "<b>#{Icons.style_icon(Icons.get_ui('clock'), Config.colors['primary'],
                                        Config.pongo_size[:small])} Hourly</b>\n\n" \
-                "#{next_hours_table}\n\n#{divider}\n\n" \
-                "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
-                                       Config.pongo_size[:small])} Daily</b>\n\n#{next_days_overview_table}"
+                "#{next_hours_table}"
 
       [text, tooltip]
     end
@@ -1204,45 +1200,51 @@ module TooltipBuilder
       "<span font_family='monospace'>#{header}\n#{rows.join("\n")}</span>"
     end
 
-    # Builds daily forecast table
+    # Builds daily forecast: days as columns in a box-drawing table.
     def make_day_table(days)
-      header = "<span weight='bold'>#{DAY_TABLE_HEADER_TEXT}</span>"
-      out_rows = []
+      return 'No daily data' if days.empty?
 
-      days.each do |d|
-        hi_val = d['max'].round
-        lo_val = d['min'].round
+      col_w = 9
+      n     = days.size
+      bar   = '─' * col_w
+      top   = '┌' + ([bar] * n).join('┬') + '┐'
+      mid   = '├' + ([bar] * n).join('┼') + '┤'
+      bot   = '└' + ([bar] * n).join('┴') + '┘'
+      sep   = '│'
 
-        hi_txt = format('%3d%s', hi_val, Config.unit)
-        lo_txt = format('%3d%s', lo_val, Config.unit)
+      cell  = ->(txt) { txt.to_s.center(col_w) }
+      ccell = ->(txt, color) { "<span foreground='#{color}'>#{cell.call(txt)}</span>" }
 
-        hi_col = "<span foreground='#{Temperature.color(d['max'])}'>#{hi_txt}</span>"
-        lo_col = "<span foreground='#{Temperature.color(d['min'])}'>#{lo_txt}</span>"
-
-        pop = [[0, d['pop'].to_i].max, 100].min
-        pop_txt = format('%3d%%', pop)
-        pop_col = "<span foreground='#{Precipitation.color(pop)}'>#{pop_txt}</span>"
-
-        precip_col = format('%<val>.1f %<unit>s', val: d['precip'], unit: Config.precip_unit).rjust(7)
-
-        cond_txt = d['cond'].to_s
+      today    = Date.today.strftime('%Y-%m-%d')
+      icon_row = sep + days.map do |d|
         glyph = Icons.weather_icon(d['code'], true)
-        icon_html = if glyph.empty?
-                      ''
-                    else
-                      Icons.style_icon(glyph, Icons.weather_color(d['code'], true),
-                                       Config.pongo_size[:small])
-                    end
-        cond_cell = "#{icon_html} #{CGI.escapeHTML(cond_txt)}".strip
+        next ' ' * col_w if glyph.empty?
 
-        row = format('%-9s │ %s │ %s │ %s │ %s │ %s',
-                     Utils.fmt_day_of_week(d['date']), hi_col, lo_col, pop_col, precip_col, cond_cell)
-        out_rows << row
-      end
+        color = Icons.weather_color(d['code'], true)
+        size  = Config.pongo_size[:xlarge]
+        "   <span foreground='#{color}' size='#{size}'>#{glyph}</span>   "
+      end.join(sep) + sep
+      day_row = sep + days.map { |d|
+        d['date'] == today ? cell.call('Today') : cell.call(Time.strptime(d['date'], '%Y-%m-%d').strftime('%a'))
+      }.join(sep) + sep
+      date_row = sep + days.map { |d|
+        cell.call(Time.strptime(d['date'], '%Y-%m-%d').strftime('%m/%d'))
+      }.join(sep) + sep
 
-      return 'No daily data' if out_rows.empty?
+      hi_row = sep + days.map { |d|
+        ccell.call("#{d['max'].round}#{Config.unit}", Temperature.color(d['max']))
+      }.join(sep) + sep
+      lo_row = sep + days.map { |d|
+        ccell.call("#{d['min'].round}#{Config.unit}", Temperature.color(d['min']))
+      }.join(sep) + sep
+      pop_row = sep + days.map do |d|
+        pop = [[0, d['pop'].to_i].max, 100].min
+        ccell.call("#{pop}%", Precipitation.color(pop))
+      end.join(sep) + sep
 
-      "<span font_family='monospace'>#{header}\n#{out_rows.join("\n")}</span>"
+      rows = [top, day_row, icon_row, date_row, mid, hi_row, lo_row, pop_row, bot]
+      content = rows.join("\n")
+      "<span font_family='monospace'>#{content}</span>"
     end
 
     # Builds 3-hour interval forecast table
@@ -1285,65 +1287,69 @@ module TooltipBuilder
 
     # Builds the common header block for tooltips
     def build_header_block(timezone:, cond:, temp:, feels:, code:, is_day:, fallback_icon:,
-                           sunrise: nil, sunset: nil, moon_phase: nil, now_pop: nil, precip_amt: nil, location_name: nil)
+                           sunrise: nil, sunset: nil, moon_phase: nil, now_pop: nil, precip_amt: nil,
+                           location_name: nil, today_high: nil, today_low: nil)
+      sz = Config.pongo_size
+
+      # Location · current time
       display_location = location_name || timezone || 'Local'
-      location_line = format('<b>%s</b>', CGI.escapeHTML(display_location))
-      tglyph, tcolor = Temperature.glyph_and_color(feels)
-      current_line = format('%s %s | %s%d%s (feels %d%s)',
-                            Icons.style_icon(Icons.weather_icon(code, is_day != 0) || fallback_icon,
-                                             Icons.weather_color(code, is_day != 0)),
-                            CGI.escapeHTML(cond),
-                            Icons.style_icon(tglyph, tcolor),
-                            temp.round,
-                            Config.unit,
-                            feels.round,
-                            Config.unit)
+      current_time = Config.time_format == '12h' ? Time.now.strftime('%I:%M %p') : Time.now.strftime('%H:%M')
+      loc_line = "<b>#{CGI.escapeHTML(display_location)}</b> · #{current_time}"
 
-      # optional sunrise/sunset
-      astro_line = ''
+      # Icon (xlarge) left of temp — one line
+      weather_icon = Icons.weather_icon(code, is_day != 0) || fallback_icon
+      icon_span    = Icons.style_icon(weather_icon, Icons.weather_color(code, is_day != 0), sz[:xlarge])
+      temp_color   = Temperature.color(temp)
+      temp_line    = "#{icon_span}<span foreground='#{temp_color}' size='#{sz[:xlarge]}'>#{temp.round}#{Config.unit}</span>"
+
+      # Feels like — own row, no icon
+      feels_line = "<span size='#{sz[:small]}'>Feels like #{feels.round}#{Config.unit}</span>"
+
+      # High | Low | PoP (medium, colored)
+      hi_lo_pop_line = ''
+      if today_high && today_low
+        hi_col = Temperature.color(today_high)
+        lo_col = Temperature.color(today_low)
+        hi_lo_pop_line = "<span foreground='#{hi_col}'>High #{today_high.round}#{Config.unit}</span>" \
+                         " | <span foreground='#{lo_col}'>Low #{today_low.round}#{Config.unit}</span>"
+        if now_pop
+          pop_color = Precipitation.color(now_pop)
+          pop_icon  = Icons.style_icon(Precipitation.icon(now_pop), pop_color, sz[:medium])
+          hi_lo_pop_line += " | #{pop_icon}<span foreground='#{pop_color}'>#{now_pop.to_i}%</span>"
+          hi_lo_pop_line += " (#{precip_amt}#{Config.precip_unit})" if precip_amt
+        end
+      end
+
+      # Sunrise | Sunset | Moon (combined)
+      parts_astro = []
       if sunrise || sunset
-        astro_line = format('%s Sunrise %s | %s Sunset %s',
-                            Icons.style_icon(TooltipBuilder.sun_icon[:RISE]),
-                            CGI.escapeHTML(sunrise || '—'),
-                            Icons.style_icon(TooltipBuilder.sun_icon[:SET]),
-                            CGI.escapeHTML(sunset || '—'))
+        parts_astro << "#{Icons.style_icon(TooltipBuilder.sun_icon[:RISE], Config.colors['primary'], sz[:medium])}" \
+                       "Sunrise #{CGI.escapeHTML(sunrise || '—')} | " \
+                       "#{Icons.style_icon(TooltipBuilder.sun_icon[:SET], Config.colors['primary'], sz[:medium])}" \
+                       "Sunset #{CGI.escapeHTML(sunset || '—')}"
       end
+      parts_astro << "#{MoonPhase.icon(moon_phase)} #{CGI.escapeHTML(MoonPhase.format_phase(moon_phase))}" if moon_phase
+      astro_line = parts_astro.join(' | ')
 
-      # optional moon phase
-      moon_line = ''
-      if moon_phase
-        moon_line = format('%s Moon Phase: %s',
-                           MoonPhase.icon(moon_phase),
-                           CGI.escapeHTML(MoonPhase.format_phase(moon_phase)))
-      end
+      rows = [loc_line, '', temp_line, feels_line]
+      rows << hi_lo_pop_line unless hi_lo_pop_line.empty?
+      rows << astro_line unless astro_line.empty?
+      rows << "\n#{divider}"
 
-      # optional "now" precip / PoP (colored)
-      now_line = ''
-      if now_pop && precip_amt
-        pop_icon_html = Icons.style_icon(Precipitation.icon(now_pop), Precipitation.color(now_pop))
-        now_pop_col = "<span foreground='#{Precipitation.color(now_pop)}'>#{now_pop.to_i}%</span>"
-        now_line = format('%s PoP %s, Precip %.1f%s',
-                          pop_icon_html, now_pop_col, precip_amt, Config.precip_unit)
-      end
-
-      parts = [location_line, '', current_line]
-      parts << astro_line unless astro_line.empty?
-      parts << moon_line unless moon_line.empty?
-      parts << now_line unless now_line.empty?
-      parts << "\n#{divider}\n"
-      parts.join("\n")
+      rows.join("\n")
     end
 
     # Builds week view tooltip with detailed 3-hour forecast
     def build_week_view_tooltip(timezone:, cond:, temp:, feels:, code:, is_day:, fallback_icon:,
                                 three_hour_rows:, sunrise: nil, sunset: nil, moon_phase: nil,
                                 now_pop: nil, precip_amt: nil, astro_by_date: nil, moon_by_date: nil,
-                                location_name: nil, max_astro_days: nil, snapshot_days: nil)
+                                location_name: nil, max_astro_days: nil, snapshot_days: nil,
+                                today_high: nil, today_low: nil)
       header_block = build_header_block(
         timezone: timezone, cond: cond, temp: temp, feels: feels,
         code: code, is_day: is_day, fallback_icon: fallback_icon,
-        sunrise: sunrise, sunset: sunset, moon_phase: moon_phase, now_pop: now_pop,
-        precip_amt: precip_amt, location_name: location_name
+        now_pop: now_pop, precip_amt: precip_amt, location_name: location_name,
+        today_high: today_high, today_low: today_low
       )
 
       astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {}, moon_by_date || {}, max_astro_days)
@@ -1445,7 +1451,8 @@ module WeekViewBuilder
         moon_by_date: moon_by_date,
         location_name: cur['location_name'],
         max_astro_days: settings[:daily_number_of_days],
-        snapshot_days: settings[:snapshot_number_of_days]
+        snapshot_days: settings[:snapshot_number_of_days],
+        today_high: days[0]&.dig('max'), today_low: days[0]&.dig('min')
       )
 
       [text, tooltip]
