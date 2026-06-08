@@ -1101,36 +1101,47 @@ module TooltipBuilder
 
     # Builds a compact table for sunrise/sunset for the dates present in rows
     def make_astro3d_table(rows, astro_by_date, moon_by_date = {}, max_days = nil)
-      header = "<span weight='bold'>#{ASTRO3D_HEADER_TEXT}</span>"
-      # If max_days is specified, use all dates from astro_by_date instead of just from rows
       dates = if max_days
                 astro_by_date.keys.sort.take(max_days)
               else
                 rows.map { |r| r['date'].to_s }.uniq.sort
               end
-      lines = dates.map do |date|
-        sunrise, sunset = astro_by_date.fetch(date, ['', ''])
-        sunrise = (sunrise.empty? ? '—' : sunrise)[0, 5]
-        sunset = (sunset.empty? ? '—' : sunset)[0, 5]
+      return 'No sunrise/sunset data' if dates.empty?
 
-        day_len, night_len = calculate_day_night_length(astro_by_date.fetch(date, ['', '']))
+      color  = Config.colors['primary']
+      sz     = Config.pongo_size
+      box_w  = 69
+      sun_ic = Icons.style_icon(Icons.get_ui('sun.rise'), color, sz[:large])
+      title_label = " #{sun_ic}<b>Sunrise &amp; Moon</b> "
+      top  = '┌' + title_label + '─' * [box_w - 19, 0].max + '┐'
+      hsep = '├' + '─' * box_w + '┤'
+      bot  = '└' + '─' * box_w + '┘'
 
-        # Add moon phase lookup
-        moon_phase = moon_by_date.fetch(date, nil)
-        moon_display = if moon_phase
-                         moon_icon = MoonPhase.icon(moon_phase)
-                         "#{moon_icon} #{MoonPhase.phase_name(moon_phase)}"
-                       else
-                         '—'
-                       end
+      header_txt = format(' %<date>-9s │ %<rise>5s │ %<set>5s │ %<day>7s │ %<ngt>7s │ Moon Phase',
+                          date: 'Date', rise: 'Rise', set: 'Set', day: 'Day', ngt: 'Night')
+      header = "│<span weight='bold'>#{header_txt}</span>"
+      out    = [top, header, hsep]
 
-        format('%-9s │ %5s │ %5s │ %7s │ %8s │ %s',
-               Utils.fmt_day_of_week(date), sunrise, sunset, day_len, night_len, moon_display)
+      dates.each do |d|
+        date_label = Time.strptime(d, '%Y-%m-%d').strftime('%a %m/%d')
+
+        rise, set_t = astro_by_date.fetch(d, ['', ''])
+        rise  = rise.empty?  ? '—' : rise[0, 5]
+        set_t = set_t.empty? ? '—' : set_t[0, 5]
+        dl, nl = calculate_day_night_length(astro_by_date.fetch(d, ['', '']))
+
+        phase      = moon_by_date.fetch(d, nil)
+        moon_glyph = phase ? MoonPhase.icon(phase) : nil
+        moon_name  = phase ? MoonPhase.phase_name(phase) : '—'
+        moon_ic    = moon_glyph ? Icons.style_icon(moon_glyph, color, sz[:medium]) : ''
+        moon_cell  = "#{moon_ic} #{moon_name}".strip
+
+        out << format('│ %-9s │ %5s │ %5s │ %7s │ %7s │ %s',
+                      date_label, rise, set_t, dl, nl, moon_cell)
       end
 
-      return 'No sunrise/sunset data' if lines.empty?
-
-      "<span font_family='monospace'>#{header}\n#{lines.join("\n")}</span>"
+      out << bot
+      "<span font_family='monospace'>#{out.join("\n")}</span>"
     end
 
     # Calculates day length (sunrise to sunset) and night length (24h - day length)
@@ -1264,40 +1275,55 @@ module TooltipBuilder
 
     # Builds 3-hour interval forecast table
     def make_3h_table(rows)
+      return 'No 3-hour detail' if rows.empty?
+
       hr_col_width = calculate_hour_column_width
-      detail3h_header_text = format(
-        "%-<date>9s │ %<hr>#{hr_col_width}s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond",
-        date: 'Date', hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
+      box_w       = hr_col_width + 51
+      cal_icon    = Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'], Config.pongo_size[:large])
+      title_label = " #{cal_icon}<b>Snapshot</b> "
+      top  = '┌' + title_label + '─' * [box_w - 13, 0].max + '┐'
+      hsep = '├' + '─' * box_w + '┤'
+      bot  = '└' + '─' * box_w + '┘'
+
+      header_txt = format(
+        "%<hr>-#{hr_col_width}s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond",
+        hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
       )
-      header = "<span weight='bold'>#{detail3h_header_text}</span>"
-      out = []
+      header = "│ <span weight='bold'>#{header_txt}</span>"
+      out      = [top, header, hsep]
+      cur_date = nil
 
       rows.each do |r|
-        temp_txt = "#{r['temp'].round}#{Config.unit}".rjust(5)
-        temp_col = "<span foreground='#{Temperature.color(r['temp'])}'>#{temp_txt}</span>"
+        row_date = r['date'].to_s
+        if row_date != cur_date
+          label = Time.strptime(row_date, '%Y-%m-%d').strftime('%a %m/%d')
+          pad   = box_w - label.length - 3
+          out << "├─ #{label} " + '─' * [pad, 0].max + '┤'
+          cur_date = row_date
+        end
 
-        pop_val = [[0, r['pop'].to_i].max, 100].min
-        pop_txt = format('%3d%%', pop_val)
-        pop_col = "<span foreground='#{Precipitation.color(pop_val)}'>#{pop_txt}</span>"
-
+        temp_txt   = "#{r['temp'].round}#{Config.unit}".rjust(5)
+        temp_col   = "<span foreground='#{Temperature.color(r['temp'])}'>#{temp_txt}</span>"
+        pop_val    = [[0, r['pop'].to_i].max, 100].min
+        pop_txt    = format('%3d%%', pop_val)
+        pop_col    = "<span foreground='#{Precipitation.color(pop_val)}'>#{pop_txt}</span>"
         precip_col = format('%<val>.1f %<unit>s', val: r['precip'], unit: Config.precip_unit).rjust(7)
 
-        glyph = Icons.weather_icon(r['code'], r['is_day'] != 0)
+        glyph     = Icons.weather_icon(r['code'], r['is_day'] != 0)
         icon_html = if glyph.empty?
                       ''
                     else
                       Icons.style_icon(glyph, Icons.weather_color(r['code'], r['is_day'] != 0),
-                                       Config.pongo_size[:small])
+                                       Config.pongo_size[:medium])
                     end
         cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
 
-        out << format("%-9s │ %#{hr_col_width}s │ %s │ %s │ %s │ %s",
-                      Utils.fmt_day_of_week(r['date']), Utils.fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
+        out << format("│ %-#{hr_col_width}s │ %s │ %s │ %s │ %s",
+                      Utils.fmt_hour(r['dt']), temp_col, pop_col, precip_col, cond_cell)
       end
 
-      return 'No 3-hour detail' if out.empty?
-
-      "<span font_family='monospace'>#{header}\n#{out.join("\n")}</span>"
+      out << bot
+      "<span font_family='monospace'>#{out.join("\n")}</span>"
     end
 
     # Builds the common header block for tooltips
@@ -1367,19 +1393,10 @@ module TooltipBuilder
         today_high: today_high, today_low: today_low
       )
 
-      astro_table = make_astro3d_table(three_hour_rows, astro_by_date || {}, moon_by_date || {}, max_astro_days)
-      astro_header = "<b>#{Icons.style_icon(Icons.get_ui('sun.rise'), Config.colors['primary'],
-                                            Config.pongo_size[:small])} " \
-                     'Sunrise / Sunset &amp; ' \
-                     "#{Icons.style_icon(Icons.get_ui('moon.night'), Config.colors['primary'],
-                                         Config.pongo_size[:small])} Moon Phases</b>"
-
-      snapshot_label = snapshot_days ? "Next #{snapshot_days} Day(s) Snapshot" : 'Snapshot'
-      detail_header = "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
-                                             Config.pongo_size[:small])} #{snapshot_label}</b>"
+      astro_table  = make_astro3d_table(three_hour_rows, astro_by_date || {}, moon_by_date || {}, max_astro_days)
       detail_table = make_3h_table(three_hour_rows)
 
-      "#{header_block}\n#{astro_header}\n\n#{astro_table}\n\n#{divider}\n\n#{detail_header}\n\n#{detail_table}"
+      "#{header_block}\n#{astro_table}\n\n#{divider}\n#{detail_table}"
     end
   end
 end
