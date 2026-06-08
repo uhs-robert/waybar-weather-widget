@@ -1089,12 +1089,7 @@ module TooltipBuilder
         today_high: days[0]&.dig('max'), today_low: days[0]&.dig('min')
       )
 
-      tooltip = "#{header_block}\n" \
-                "<b>#{Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'],
-                                       Config.pongo_size[:small])} Daily</b>\n\n#{next_days_overview_table}\n\n#{divider}\n" \
-                "<b>#{Icons.style_icon(Icons.get_ui('clock'), Config.colors['primary'],
-                                       Config.pongo_size[:small])} Hourly</b>\n\n" \
-                "#{next_hours_table}"
+      tooltip = "#{header_block}\n#{next_days_overview_table}\n\n#{divider}\n#{next_hours_table}"
 
       [text, tooltip]
     end
@@ -1165,49 +1160,69 @@ module TooltipBuilder
 
     # Builds hourly forecast table
     def make_hour_table(next_hours)
+      return 'No hourly data' if next_hours.empty?
+
       hr_col_width = calculate_hour_column_width
-      hour_table_header_text = format(
+      box_w       = hr_col_width + 48
+      clock_icon  = Icons.style_icon(Icons.get_ui('clock'), Config.colors['primary'], Config.pongo_size[:large])
+      title_label = " #{clock_icon}<b>Hourly</b> "
+      top   = '┌' + title_label + '─' * [box_w - 11, 0].max + '┐'
+      hsep  = '├' + '─' * box_w + '┤'
+      bot   = '└' + '─' * box_w + '┘'
+
+      header_txt = format(
         "%<hr>-#{hr_col_width}s │ %<temp>5s │ %<pop>4s │ %<precip>7s │ Cond",
         hr: 'Hr', temp: 'Temp', pop: 'PoP', precip: 'Precip'
       )
-      header = "<span weight='bold'>#{hour_table_header_text}</span>"
-      rows = []
+      header = "│ <span weight='bold'>#{header_txt}</span>"
+
+      rows     = [top, header, hsep]
+      cur_date = nil
 
       next_hours.each do |h|
-        temp_txt = "#{h['temp'].round}#{Config.unit}".rjust(5)
-        temp_col = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
+        row_date = h['dt'].strftime('%Y-%m-%d')
+        if cur_date && row_date != cur_date
+          label = h['dt'].strftime('%a %m/%d')
+          pad   = box_w - label.length - 4
+          rows << "├─ #{label} " + '─' * [pad, 0].max + '┤'
+        end
+        cur_date = row_date
 
-        pop_txt = "#{h['pop'].to_i}%".rjust(4)
-        pop_col = "<span foreground='#{Precipitation.color(h['pop'])}'>#{pop_txt}</span>"
-
+        temp_txt   = "#{h['temp'].round}#{Config.unit}".rjust(5)
+        temp_col   = "<span foreground='#{Temperature.color(h['temp'])}'>#{temp_txt}</span>"
+        pop_txt    = "#{h['pop'].to_i}%".rjust(4)
+        pop_col    = "<span foreground='#{Precipitation.color(h['pop'])}'>#{pop_txt}</span>"
         precip_col = format('%<val>.1f %<unit>s', val: h['precip'], unit: Config.precip_unit).rjust(7)
 
-        glyph = Icons.weather_icon(h['code'], h['is_day'] != 0)
+        glyph     = Icons.weather_icon(h['code'], h['is_day'] != 0)
         icon_html = if glyph.empty?
                       ''
                     else
                       Icons.style_icon(glyph, Icons.weather_color(h['code'], h['is_day'] != 0),
-                                       Config.pongo_size[:small])
+                                       Config.pongo_size[:large])
                     end
         cond_cell = "#{icon_html} #{CGI.escapeHTML(h['cond'].to_s)}".strip
 
-        rows << format("%-#{hr_col_width}s │ %s │ %s │ %s │ %s",
+        rows << format("│ %-#{hr_col_width}s │ %s │ %s │ %s │ %s",
                        Utils.fmt_hour(h['dt']), temp_col, pop_col, precip_col, cond_cell)
       end
 
-      return 'No hourly data' if rows.empty?
-
-      "<span font_family='monospace'>#{header}\n#{rows.join("\n")}</span>"
+      rows << bot
+      "<span font_family='monospace'>#{rows.join("\n")}</span>"
     end
 
     # Builds daily forecast: days as columns in a box-drawing table.
     def make_day_table(days)
       return 'No daily data' if days.empty?
 
-      col_w = 9
-      n     = days.size
-      bar   = '─' * col_w
-      top   = '┌' + ([bar] * n).join('┬') + '┐'
+      col_w   = 9
+      n       = days.size
+      bar     = '─' * col_w
+      inner_w = col_w * n + n - 1
+      cal_icon = Icons.style_icon(Icons.get_ui('calendar'), Config.colors['primary'], Config.pongo_size[:large])
+      title_label = " #{cal_icon}<b>Daily</b> "
+      top = '┌' + title_label + '─' * [inner_w - 10, 0].max + '┐'
+      col_top = '├' + ([bar] * n).join('┬') + '┤'
       mid   = '├' + ([bar] * n).join('┼') + '┤'
       bot   = '└' + ([bar] * n).join('┴') + '┘'
       sep   = '│'
@@ -1242,7 +1257,7 @@ module TooltipBuilder
         ccell.call("#{pop}%", Precipitation.color(pop))
       end.join(sep) + sep
 
-      rows = [top, day_row, icon_row, date_row, mid, hi_row, lo_row, pop_row, bot]
+      rows = [top, col_top, day_row, icon_row, date_row, mid, hi_row, lo_row, pop_row, bot]
       content = rows.join("\n")
       "<span font_family='monospace'>#{content}</span>"
     end
@@ -1296,16 +1311,16 @@ module TooltipBuilder
       current_time = Config.time_format == '12h' ? Time.now.strftime('%I:%M %p') : Time.now.strftime('%H:%M')
       loc_line = "<b>#{CGI.escapeHTML(display_location)}</b> · #{current_time}"
 
-      # Icon (xlarge) left of temp — one line
+      # Icon left of temp, one line
       weather_icon = Icons.weather_icon(code, is_day != 0) || fallback_icon
       icon_span    = Icons.style_icon(weather_icon, Icons.weather_color(code, is_day != 0), sz[:xlarge])
       temp_color   = Temperature.color(temp)
       temp_line    = "#{icon_span}<span foreground='#{temp_color}' size='#{sz[:xlarge]}'>#{temp.round}#{Config.unit}</span>"
 
-      # Feels like — own row, no icon
+      # Feels like, own row, no icon
       feels_line = "<span size='#{sz[:small]}'>Feels like #{feels.round}#{Config.unit}</span>"
 
-      # High | Low | PoP (medium, colored)
+      # High | Low | PoP
       hi_lo_pop_line = ''
       if today_high && today_low
         hi_col = Temperature.color(today_high)
@@ -1320,7 +1335,7 @@ module TooltipBuilder
         end
       end
 
-      # Sunrise | Sunset | Moon (combined)
+      # Sunrise | Sunset | Moon
       parts_astro = []
       if sunrise || sunset
         parts_astro << "#{Icons.style_icon(TooltipBuilder.sun_icon[:RISE], Config.colors['primary'], sz[:medium])}" \
@@ -1635,7 +1650,7 @@ private def run_weather_update(force_refresh: false)
 
   if stale
     text = "#{text} <span foreground='#{Config.colors['warm']}' size='#{Config.pongo_size[:small]}'>⚠</span>"
-    tooltip = "<span foreground='#{Config.colors['warm']}'> Stale cache — API unavailable</span>\n\n#{tooltip}"
+    tooltip = "<span foreground='#{Config.colors['warm']}'> Stale cache... API unavailable</span>\n\n#{tooltip}"
   end
 
   classes = [
