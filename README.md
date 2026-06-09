@@ -143,7 +143,9 @@ The only weather widget you'll ever need. Feature rich, customizable, and clean 
      "font_size": 14, // Base font size in px
      "colors": {
        "primary": "#42A5F5", // Default Nerd Font icon color
+       "very_cold": "#36A5CA", // Temp very cold
        "cold": "skyblue", // Temp cold
+       "chilly": "#BEEEB8", // Temp chilly
        "neutral": "#42A5F5", // Temp neutral
        "warm": "khaki", // Temp warm
        "hot": "indianred", // Temp hot
