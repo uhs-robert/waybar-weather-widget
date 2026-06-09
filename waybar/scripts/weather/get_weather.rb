@@ -1133,8 +1133,8 @@ module TooltipBuilder
         phase      = moon_by_date.fetch(d, nil)
         moon_glyph = phase ? MoonPhase.icon(phase) : nil
         moon_name  = phase ? MoonPhase.phase_name(phase) : '—'
-        moon_ic    = moon_glyph ? Icons.style_icon(moon_glyph, color, sz[:medium]) : ''
-        moon_cell  = "#{moon_ic} #{moon_name}".strip
+        moon_ic    = moon_glyph ? Icons.style_icon(moon_glyph, color, sz[:large]) : ''
+        moon_cell  = "#{moon_ic}#{moon_name}".strip
 
         out << format('│ %-9s │ %5s │ %5s │ %7s │ %7s │ %s',
                       date_label, rise, set_t, dl, nl, moon_cell)
@@ -1247,7 +1247,7 @@ module TooltipBuilder
         next ' ' * col_w if glyph.empty?
 
         color = Icons.weather_color(d['code'], true)
-        size  = Config.pongo_size[:xlarge]
+        size  = Config.icon_type == 'emoji' ? Config.pongo_size[:medium] + 1000 : Config.pongo_size[:xlarge]
         "   <span foreground='#{color}' size='#{size}'>#{glyph}</span>   "
       end.join(sep) + sep
       day_row = sep + days.map { |d|
@@ -1314,7 +1314,7 @@ module TooltipBuilder
                       ''
                     else
                       Icons.style_icon(glyph, Icons.weather_color(r['code'], r['is_day'] != 0),
-                                       Config.pongo_size[:medium])
+                                       Config.pongo_size[:large])
                     end
         cond_cell = "#{icon_html} #{CGI.escapeHTML(r['cond'].to_s)}".strip
 
@@ -1364,9 +1364,9 @@ module TooltipBuilder
       # Sunrise | Sunset | Moon
       parts_astro = []
       if sunrise || sunset
-        parts_astro << "#{Icons.style_icon(TooltipBuilder.sun_icon[:RISE], Config.colors['primary'], sz[:medium])}" \
+        parts_astro << "#{Icons.style_icon(TooltipBuilder.sun_icon[:RISE], Config.colors['primary'], sz[:large])}" \
                        "Sunrise #{CGI.escapeHTML(sunrise || '—')} | " \
-                       "#{Icons.style_icon(TooltipBuilder.sun_icon[:SET], Config.colors['primary'], sz[:medium])}" \
+                       "#{Icons.style_icon(TooltipBuilder.sun_icon[:SET], Config.colors['primary'], sz[:large])}" \
                        "Sunset #{CGI.escapeHTML(sunset || '—')}"
       end
       parts_astro << "#{MoonPhase.icon(moon_phase)} #{CGI.escapeHTML(MoonPhase.format_phase(moon_phase))}" if moon_phase
